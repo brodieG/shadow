@@ -28,10 +28,8 @@ ray_shade2 <- function(
   # we fall off grid
 
   dists <- as.integer(
-    pmax(
-      pmin((lim.x - coords.x) / sinsun, (lim.y - coords.y) / cossun, maxsearch),
-      1L
-  ) )
+    pmin((lim.x - coords.x) / sinsun, (lim.y - coords.y) / cossun, maxsearch)
+  )
   max.dist <- max(dists)
 
   # We need to compute the coordinates along the path to light source.  To do
@@ -62,10 +60,11 @@ ray_shade2 <- function(
   # anglebreaks are above that.
 
   ang.max <- tapply(heights.ang, coords.id, max)
-  matrix(
-    1 - (findInterval(ang.max, anglebreaks) / length(anglebreaks)),
-    dim(heightmap)
+  res <- matrix(1, nrow=nrow(heightmap), ncol=ncol(heightmap))
+  res[as.integer(names(ang.max))] <- 1 - (
+    findInterval(ang.max, anglebreaks, left.open=TRUE) / length(anglebreaks)
   )
+  res
 }
 ## Bilinear Interpolation
 ##
