@@ -1,7 +1,4 @@
-# A simple bilinear interpolation
-#
-# Copyright: Wolf Vollprecht
-# License: GPL-3
+## A simple bilinear interpolation
 
 faster_bilinear <- function (Z, x0, y0){
   i = floor(x0)
@@ -31,7 +28,8 @@ faster_bilinear <- function (Z, x0, y0){
 #' function.
 #'
 #' inheritParams rayshader::ray_shade
-#' @value numeric matrix of shadow intensities between with values in
+#' @export
+#' @return numeric matrix of shadow intensities between with values in
 #'   &91;0,1&93;.
 
 ray_shade1 <- function(
