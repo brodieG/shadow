@@ -28,8 +28,10 @@ ray_shade2 <- function(
   # we fall off grid
 
   dists <- as.integer(
-    pmin((lim.x - coords.x) / sinsun, (lim.y - coords.y) / cossun, maxsearch)
-  )
+    pmax(
+      pmin((lim.x - coords.x) / sinsun, (lim.y - coords.y) / cossun, maxsearch),
+      1L
+  ) )
   max.dist <- max(dists)
 
   # We need to compute the coordinates along the path to light source.  To do
