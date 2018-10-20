@@ -1,0 +1,40 @@
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "##",
+  fig.path = "README-",
+  error = TRUE
+)
+```
+
+# Shadow
+
+Over the past few months I've been resisting the urge to get distracted by the
+pretty awesome work that @tylermorganwall has been doing with his [rayshader
+package](https://github.com/tylermorganwall/rayshader).  His [blog
+post](http://www.tylermw.com/throwing-shade/) introducing the topic is visually
+stunning, accessible, and pedagogically effective (e.g. figure 5.).  So for the
+past few months I've been admiring the lively reliefs that cropped up on twitter
+and leaving at that.
+
+Unfortunately (for me) at some point recently others got the idea to use the
+`rayshader` algorithm demonstrate the [incorrigible slowness of
+R](https://nextjournal.com/wolfv/how-fast-is-r-with-fastr-pythran):
+
+
+
+that R is incorrigibly slow.
+
+shading
+algorithm used by rayshader is a great example of why R is slow and you should
+use some-other-thing for your statistical programming 
+
+
+But mo
+
+It's great work, but I
+have other things to 
+
+

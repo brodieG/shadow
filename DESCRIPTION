@@ -1,0 +1,24 @@
+Package: shadow
+Title: Experimental R-only Implementation of Rayshader
+Description: Minimal re-implementation of Tyler Morgan Wall's
+   rayshader::ray_shade function that demonstrates pure R is competitive with
+   compiled versions for this purpose.
+Version: 0.0.0.9000
+Authors@R: c(
+    person("Brodie", "Gaslam", email="brodie.gaslam@yahoo.com",
+    role=c("aut", "cre")),
+    person("Tyler", "Wall", "Morgan", role="cph",
+    comment="Original R raytrace code"
+    ),
+    person("Wolf", "Vollprecht", role="cph",
+    comment="Adatped faster_bilinear implementation."
+    ),
+    )
+Depends:
+    R (>= 3.1.0)
+License: GPL-3
+LazyData: true
+URL: https://github.com/brodieG/shadow
+BugReports: https://github.com/brodieG/shadow/issues
+Roxygen: list(markdown = TRUE)
+Encoding: UTF-8
