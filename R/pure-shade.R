@@ -7,7 +7,7 @@
 #'
 #' @export
 #' @inheritParams rayshader::ray_shade
-#' @value numeric matrix of shadow intensities between with values in
+#' @return numeric matrix of shadow intensities between with values in
 #'   &91;0,1&93;.
 
 ray_shade2 <- function(
@@ -15,6 +15,8 @@ ray_shade2 <- function(
 ) {
   anglebreaks <- sort(tan(anglebreaks / 180 * pi))
   sunangle <- sunangle / 180 * pi
+  sinsun <- sin(sunangle)
+  cossun <- cos(sunangle)
 
   lim.x <- if(sinsun < 0) 1 else nrow(heightmap)
   lim.y <- if(cossun < 0) 1 else ncol(heightmap)
@@ -63,10 +65,10 @@ ray_shade2 <- function(
     dim(heightmap)
   )
 }
-#' Bilinear Interpolation
-#'
-#' A vectorized version of Wolf Vollprecht's faster_bilinear (see
-#' R/slow-shade.R).
+## Bilinear Interpolation
+##
+## A vectorized version of Wolf Vollprecht's faster_bilinear (see
+## R/slow-shade.R).
 
 ff_bilin <- function(Z, x, y) {
   i <- as.integer(x)
@@ -80,7 +82,8 @@ ff_bilin <- function(Z, x, y) {
   # for the matrix is slower than trying to explicitly compute each of the
   # special cases.
 
-  Z <- rbind(cbind(Z, 0), 0)
+  Z2 <- matrix(0, nrow=nrow(Z) + 1L, ncol=ncol(Z) + 1L)
+  Z2[-nrow(Z2), -ncol(Z2)] <- Z
 
   # Create symbols for re-used vectors
 
@@ -91,8 +94,8 @@ ff_bilin <- function(Z, x, y) {
 
   # compute interpolation in a vectorized manner
 
-  (YT_1) * (XT_1) * Z[cbind(i,  j)] +
-  (YT_1) * (XT)   * Z[cbind(i1, j)] +
-  (YT)   * (XT_1) * Z[cbind(i,  j1)] +
-  (YT)   * (XT)   * Z[cbind(i1,  j1)]
+  (YT_1) * (XT_1) * Z2[cbind(i,  j)] +
+  (YT_1) * (XT)   * Z2[cbind(i1, j)] +
+  (YT)   * (XT_1) * Z2[cbind(i,  j1)] +
+  (YT)   * (XT)   * Z2[cbind(i1,  j1)]
 }
