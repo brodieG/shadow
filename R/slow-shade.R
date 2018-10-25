@@ -27,6 +27,9 @@ faster_bilinear <- function (Z, x0, y0){
 #' [adaptation](https://nextjournal.com/wolfv/how-fast-is-r-with-fastr-pythran)
 #' function.
 #'
+#' It does not seem to work properly for all azimuths.  We have not bothered to
+#' debug why. It seems to work for [0, 90].
+#'
 #' inheritParams rayshader::ray_shade
 #' @export
 #' @return numeric matrix of shadow intensities between with values in

@@ -2,9 +2,13 @@
 % Please edit documentation in R/pure-shade.R
 \name{ray_shade2}
 \alias{ray_shade2}
-\title{Pure Base R Version of rayshader}
+\alias{ray_shade3}
+\title{Vectorized Base R Versions of \code{rayshader::ray_shade}}
 \usage{
 ray_shade2(heightmap, anglebreaks = seq(40, 50, 1), sunangle = 315,
+  maxsearch = 100)
+
+ray_shade3(heightmap, anglebreaks = seq(40, 50, 1), sunangle = 315,
   maxsearch = 100)
 }
 \arguments{
@@ -24,4 +28,10 @@ numeric matrix of shadow intensities between with values in
 This is derived from the Wolf Vollprecht's
 \href{https://nextjournal.com/wolfv/how-fast-is-r-with-fastr-pythran}{adaptation}
 of the original pure R implementation from Tyler Morgan Wall's \href{http://www.tylermw.com/throwing-shade/}{blog post}.
+}
+\details{
+\itemize{
+\item ray_shade2: vectorized version with bilinear height interpolation
+\item ray_shade3: vectorized version with closest point height approx
+}
 }

@@ -1,9 +1,12 @@
-#' Pure Base R Version of rayshader
+#' Vectorized Base R Versions of `rayshader::ray_shade`
 #'
 #' This is derived from the Wolf Vollprecht's
 #' [adaptation](https://nextjournal.com/wolfv/how-fast-is-r-with-fastr-pythran)
 #' of the original pure R implementation from Tyler Morgan Wall's [blog
 #' post](http://www.tylermw.com/throwing-shade/).
+#'
+#' * ray_shade2: vectorized version with bilinear height interpolation
+#' * ray_shade3: vectorized version with closest point height approx
 #'
 #' @export
 #' @inheritParams rayshader::ray_shade
@@ -12,8 +15,28 @@
 
 ray_shade2 <- function(
   heightmap, anglebreaks=seq(40, 50, 1), sunangle=315, maxsearch=100
+)
+  ray_shade_core(
+    heightmap=heightmap, anglebreaks=anglebreaks,
+    sunangle=sunangle, maxsearch=maxsearch, interpfun=faster_bilinear2
+  )
+
+#' @export
+#' @rdname ray_shade2
+
+ray_shade3 <- function(
+  heightmap, anglebreaks=seq(40, 50, 1), sunangle=315, maxsearch=100
+)
+  ray_shade_core(
+    heightmap=heightmap, anglebreaks=anglebreaks,
+    sunangle=sunangle, maxsearch=maxsearch, interpfun=approx_height
+  )
+
+ray_shade_core <- function(
+  heightmap, anglebreaks=seq(40, 50, 1), sunangle=315, maxsearch=100,
+  interpfun
 ) {
-  elevations <- sort(tan(elevations / 180 * pi))
+  elevations <- sort(tan(anglebreaks / 180 * pi))
   azimuth <- sunangle / 180 * pi
   sinsun <- sin(azimuth)
   cossun <- cos(azimuth)
@@ -60,7 +83,7 @@ ray_shade2 <- function(
   # compute angular height at each of the light coords
 
   heights.ang <- (
-    faster_bilinear2(heightmap, path.x, path.y) -
+    interpfun(heightmap, path.x, path.y) -
     heightmap[cbind(coords.x.id, coords.y.id)]
   ) / coords.offset
 
@@ -108,4 +131,7 @@ faster_bilinear2 <- function(Z, x, y) {
   (YT)   * (XT_1) * Z2[cbind(i,  j1)] +
   (YT)   * (XT)   * Z2[cbind(i1,  j1)]
 }
+## Pick Height of Closest Point
+
+approx_height <- function(Z, x, y) Z[round(cbind(x, y), 0)]
 

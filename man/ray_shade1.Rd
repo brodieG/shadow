@@ -18,5 +18,8 @@ functionalize, and with Wolf Vollprecht's bilinear interpolation
 function.
 }
 \details{
+It does not seem to work properly for all azimuths.  We have not bothered to
+debug why. It seems to work for \link{0, 90}.
+
 inheritParams rayshader::ray_shade
 }

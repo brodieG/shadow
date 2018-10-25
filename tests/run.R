@@ -2,6 +2,9 @@
 ##
 ##
 
+
+stop("Don't run this blindly")
+
 eltif = raster::raster("~/Downloads/dem_01.tif")
 elmat1 = matrix(
   raster::extract(eltif,raster::extent(eltif),buffer=10000),
@@ -44,11 +47,11 @@ microbenchmark::microbenchmark(
   ray_shade2(volcano, sunangle=sun, anglebreaks=els, maxsearch=max)
 )
 
-r1 <- ray_shade1(volcano, sunangle=45, anglebreaks=els, maxsearch=max)
-r2 <- ray_shade2(volcano, sunangle=45, anglebreaks=els, maxsearch=max)
+r1 <- ray_shade1(volcano, sunangle=45, anglebreaks=els)
+r2 <- ray_shade2(volcano, sunangle=45, anglebreaks=els)
+system.time(r3 <- ray_shade3(elmat1, sunangle=45, anglebreaks=els))
 
 library(ggplot2)
-xx <- yy
 
 dims <- lapply(dim(sh.cpp), seq_len)
 df <- rbind(
@@ -57,7 +60,7 @@ df <- rbind(
    cbind(do.call(expand.grid, dims), z=c(sh.for), type='for')
 )
 
-xx.df <- cbind(do.call(expand.grid, lapply(dim(xx), seq_len)), z=c(xx))
+xx <- r3
 xx.df <- cbind(do.call(expand.grid, lapply(dim(xx), seq_len)), z=c(xx))
 
 ggplot(xx.df, aes(x=Var1, y=Var2, fill=z)) +
