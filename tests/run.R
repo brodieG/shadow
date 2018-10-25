@@ -60,7 +60,7 @@ df <- rbind(
    cbind(do.call(expand.grid, dims), z=c(sh.for), type='for')
 )
 
-xx <- r3
+xx <- r2
 xx.df <- cbind(do.call(expand.grid, lapply(dim(xx), seq_len)), z=c(xx))
 
 ggplot(xx.df, aes(x=Var1, y=Var2, fill=z)) +

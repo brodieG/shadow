@@ -25,6 +25,21 @@ ggplot(shade.df, aes(x=Var1, y=Var2, fill=z)) +
   theme(axis.text=element_text(size=6))
 ```
 
+## Installation
+
+This package is only available on github:
+
+```
+## devtools::install_github('brodieg/shadow'), or:
+f.dl <- tempfile()
+f.uz <- tempfile()
+github.url <- 'https://github.com/brodieG/shadow/archive/master.zip'
+download.file(github.url, f.dl)
+unzip(f.dl, exdir=f.uz)
+install.packages(file.path(f.uz, 'shadow-master'), repos=NULL, type='source')
+unlink(c(f.dl, f.uz))
+```
+
 ## Related Items
 
 * Tyler Morgan Wall's [rayshader

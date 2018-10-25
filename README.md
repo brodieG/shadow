@@ -18,7 +18,7 @@ system.time(shade <- shadow::ray_shade2(elmat, seq(-90, 90, length=25), 45))
 
 ```
 ##    user  system elapsed 
-##   8.514   5.780  16.038
+##  10.225   5.025  18.292
 ```
 
 ```r
@@ -35,6 +35,21 @@ ggplot(shade.df, aes(x=Var1, y=Var2, fill=z)) +
 ```
 
 ![plot of chunk unnamed-chunk-1](figure/unnamed-chunk-1-1.png)
+
+## Installation
+
+This package is only available on github:
+
+```
+## devtools::install_github('brodieg/shadow'), or:
+f.dl <- tempfile()
+f.uz <- tempfile()
+github.url <- 'https://github.com/brodieG/shadow/archive/master.zip'
+download.file(github.url, f.dl)
+unzip(f.dl, exdir=f.uz)
+install.packages(file.path(f.uz, 'shadow-master'), repos=NULL, type='source')
+unlink(c(f.dl, f.uz))
+```
 
 ## Related Items
 
