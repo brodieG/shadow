@@ -35,19 +35,19 @@ faster_bilinear <- function (Z, x0, y0){
 ray_shade1 <- function(
   heightmap, anglebreaks=seq(40, 50, 1), sunangle=315, maxsearch=100
 ) {
-  anglebreaks <- sort(tan(anglebreaks / 180 * pi))
-  sunangle <- sunangle / 180 * pi
+  elevations <- sort(tan(anglebreaks / 180 * pi))
+  azimuth <- sunangle / 180 * pi
   maxdistance <- min(
     floor(sqrt(ncol(heightmap)^2 + nrow(heightmap)^2)), maxsearch
   )
-  cossun <- cos(sunangle)
-  sinsun <- sin(sunangle)
+  cossun <- cos(azimuth)
+  sinsun <- sin(azimuth)
   heightmapshadow = matrix(1, ncol = ncol(heightmap), nrow = nrow(heightmap))
 
   for (i in 1:nrow(heightmap)) {
     for (j in 1:ncol(heightmap)) {
       vij = heightmap[i, j]
-      for (anglei in anglebreaks) {
+      for (elevation in elevations) {
         for (k in 1:maxdistance) {
 
           xcoord = (i + sinsun*k)
@@ -58,7 +58,7 @@ ray_shade1 <- function(
              xcoord < 0 || ycoord < 0) {
             break
           } else {
-            tanangheight = vij + anglei * k
+            tanangheight = vij + elevation * k
             if (all(c(heightmap[ceiling(xcoord), ceiling(ycoord)],
                       heightmap[floor(xcoord), ceiling(ycoord)],
                       heightmap[ceiling(xcoord), floor(ycoord)],
@@ -66,7 +66,7 @@ ray_shade1 <- function(
               next
             if (tanangheight < faster_bilinear(heightmap, xcoord, ycoord)) {
               heightmapshadow[i, j] =  heightmapshadow[i, j] - 1 /
-                length(anglebreaks)
+                length(elevations)
               break
             }
           }

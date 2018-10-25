@@ -13,13 +13,17 @@
 ray_shade2 <- function(
   heightmap, anglebreaks=seq(40, 50, 1), sunangle=315, maxsearch=100
 ) {
-  anglebreaks <- sort(tan(anglebreaks / 180 * pi))
-  sunangle <- sunangle / 180 * pi
-  sinsun <- sin(sunangle)
-  cossun <- cos(sunangle)
+  elevations <- sort(tan(elevations / 180 * pi))
+  azimuth <- sunangle / 180 * pi
+  sinsun <- sin(azimuth)
+  cossun <- cos(azimuth)
+
+  # grid boundary depends on sun azimuth
 
   lim.x <- if(sinsun < 0) 1 else nrow(heightmap)
   lim.y <- if(cossun < 0) 1 else ncol(heightmap)
+
+  # generate every permuation of heightmap coords
 
   coords.x <- rep(seq_len(nrow(heightmap)), ncol(heightmap))
   coords.y <- rep(seq_len(ncol(heightmap)), each=nrow(heightmap))
@@ -36,33 +40,37 @@ ray_shade2 <- function(
   # this generate one vector that will contain concatenated the paths for each
   # of the original points.
 
+  # First compute the maximum possible x and y offsets values long the paths
+
   sin.dists <- seq_len(max.dist) * sinsun
   cos.dists <- seq_len(max.dist) * cossun
 
   # coords.id tracks the origin coordinate of each element in our light path
 
   coords.id <- rep(seq_along(coords.x), dists)
-  coords.offset <- sequence(dists)
+  coords.offset <- sequence(dists)   # steps from origin coordinate
   coords.x.id <- coords.x[coords.id]
   coords.y.id <- coords.y[coords.id]
 
-  coords.l.x <- coords.x.id + sin.dists[coords.offset]
-  coords.l.y <- coords.y.id + cos.dists[coords.offset]
+  # compute actual coordinates of light paths via simple trig
+
+  path.x <- coords.x.id + sin.dists[coords.offset]
+  path.y <- coords.y.id + cos.dists[coords.offset]
 
   # compute angular height at each of the light coords
 
   heights.ang <- (
-    ff_bilin(heightmap, coords.l.x, coords.l.y) -
+    faster_bilinear2(heightmap, path.x, path.y) -
     heightmap[cbind(coords.x.id, coords.y.id)]
   ) / coords.offset
 
   # compute max ang for each coord id, and then determine how many of the
-  # anglebreaks are above that.
+  # elevations are above that.
 
   ang.max <- tapply(heights.ang, coords.id, max)
   res <- matrix(1, nrow=nrow(heightmap), ncol=ncol(heightmap))
   res[as.integer(names(ang.max))] <- 1 - (
-    findInterval(ang.max, anglebreaks, left.open=TRUE) / length(anglebreaks)
+    findInterval(ang.max, elevations, left.open=TRUE) / length(elevations)
   )
   res
 }
@@ -71,7 +79,7 @@ ray_shade2 <- function(
 ## A vectorized version of Wolf Vollprecht's faster_bilinear (see
 ## R/slow-shade.R).
 
-ff_bilin <- function(Z, x, y) {
+faster_bilinear2 <- function(Z, x, y) {
   i <- as.integer(x)
   j <- as.integer(y)
   XT <- x - i
@@ -100,3 +108,4 @@ ff_bilin <- function(Z, x, y) {
   (YT)   * (XT_1) * Z2[cbind(i,  j1)] +
   (YT)   * (XT)   * Z2[cbind(i1,  j1)]
 }
+

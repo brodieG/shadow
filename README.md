@@ -10,9 +10,18 @@ This package implements:
 * `shadow::ray_shade1`: the original for-loop based pure R shader.
 * `shadow::ray_shade2`: a vectorized pure R shader
 
-```{r}
+
+```r
 elmat <- readRDS('extra/elmat.RDS') # http://tylermw.com/data/dem_01.tif.zip
 system.time(shade <- shadow::ray_shade2(elmat, seq(-90, 90, length=25), 45))
+```
+
+```
+##    user  system elapsed 
+##   8.514   5.780  16.038
+```
+
+```r
 shade.df <- cbind(do.call(expand.grid, lapply(dim(shade), seq_len)), z=c(shade))
 
 library(ggplot2)
@@ -24,6 +33,8 @@ ggplot(shade.df, aes(x=Var1, y=Var2, fill=z)) +
   scale_y_continuous(expand=c(0,0)) +
   theme(axis.text=element_text(size=6))
 ```
+
+![plot of chunk unnamed-chunk-1](figure/unnamed-chunk-1-1.png)
 
 ## Related Items
 
