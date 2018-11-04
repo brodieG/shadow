@@ -154,20 +154,22 @@ mesh.ang.3 <- acos(
   (sqrt(rowSums(mesh.vec[,,3]^2)) * sqrt(rowSums(mesh.vec[,,1]^2)))
 )
 # points that are within their triangles will have a sum of angles equal to 2pi
+# Need to be a little more generous for precision pruposes, could lead to
+# incorrecte determinations in very corner cases
 
 points.in <- as.data.frame(
-  mesh.fin[(mesh.ang.1 + mesh.ang.2 + mesh.ang.3 >= 2 * pi),]
+  mesh.fin[(mesh.ang.1 + mesh.ang.2 + mesh.ang.3 >= 2 * pi - 1e-6),]
 )
 ggplot(as.data.frame(mesh3), aes(x=V2, y=V3, group=V1)) +
   geom_polygon(color='blue', size=.2, alpha=.4) +
   geom_point(
     color='red', data=points.in, aes(x=x.int, y=y.int, group=NULL), size=.1
-  ) +
-  coord_cartesian(xlim=c(3,7), ylim=c(3,7)) +
-  geom_polygon(
-    data=as.data.frame(t(mesh[9718,,][1:2,])), aes(V1, V2, group=21435145123),
-    color='red', fill='blue'
   )
+  coord_cartesian(xlim=c(26,30), ylim=c(15,20))
+#   geom_polygon(
+#     data=as.data.frame(t(mesh[9718,,][1:2,])), aes(V1, V2, group=21435145123),
+#     color='red', fill='blue'
+#   )
 
   mesh[
   which(
