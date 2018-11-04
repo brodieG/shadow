@@ -37,8 +37,10 @@ res.x <- 120
 res.y <- 100
 
 mxres <- mxlrp
-mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) * (res.y - 1)
-mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) * (res.x - 1)
+mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) *
+  (res.y - 1) + 1
+mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
+  (res.x - 1) + 1
 
 # Break up our data into a triangular mesh, first by doing a tile mesh, and then
 # splitting each tile in two.  The tile is derived from the grid by collecting
@@ -70,7 +72,7 @@ mesh[-seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,2:4]
 
 mesh2 <- aperm(mesh, c(1, 3, 2))
 mesh3 <- cbind(
-  rep(seq_len(nrow(mesh2)), 
+  rep(seq_len(nrow(mesh2)),
   each=ncol(mesh2)), c(t(mesh2[,,1])), c(t(mesh2[,,2]))
 )
 # Need to reorder points in the mesh
@@ -103,22 +105,81 @@ mesh.int[, c('xmax', 'ymax')] <- floor(mesh.int[, c('xmax', 'ymax')])
 # for each triangle, generate the set of integer coordinates that it could
 # contain.
 
-mesh.int.len.x <- pmax(mesh.int[, 'xmax'] - mesh.int[, 'xmin'], 0)
-mesh.int.len.y <- pmax(mesh.int[, 'ymax'] - mesh.int[, 'ymin'], 0)
+mesh.int.len.x <- pmax(mesh.int[, 'xmax'] - mesh.int[, 'xmin'] + 1, 0)
+mesh.int.len.y <- pmax(mesh.int[, 'ymax'] - mesh.int[, 'ymin'] + 1, 0)
 mesh.int.len <- mesh.int.len.x * mesh.int.len.y
 
 # Use linearized coords that we'll decompose into x/y later
 
 mesh.int.coords <- matrix(seq_len(res.x * res.y), nrow=res.x)
+mesh.id.exp <- mesh.int[mesh.int.len > 0, 'id']
+mesh.vals <- vector('list', length(mesh.many.id))
 
-# Special case, one point max per triangle
+for(i in seq_along(mesh.id.exp))  {
+  mesh.dat <- mesh.int[mesh.id.exp[i],]
+  mesh.vals[[i]] <- cbind(
+    id=mesh.id.exp[i],
+    coord=c(
+      mesh.int.coords[
+        mesh.dat['xmin']:mesh.dat['xmax'],
+        mesh.dat['ymin']:mesh.dat['ymax']
+] ) ) }
+mesh.vals.raw <- do.call(rbind, mesh.vals)
 
-mesh.one <- mesh.int[mesh.int.len == 1, c('id', 'xmin', 'ymin')]
+# recover x/y integer coordinates, and compute the x for the edges
 
-# All others
+mesh.vals.id <- mesh.vals.raw[, 'id']
+mesh.fin <- cbind(
+  id=mesh.vals.id,
+  x.int=((mesh.vals.raw[, 'coord'] - 1) %% res.x) + 1,
+  y.int=((mesh.vals.raw[, 'coord'] - 1) %/% res.x) + 1
+)
+# compute vectors from integer points to the triangle vertices
 
-mesh.many.id <- mesh.int[mesh.int.len > 1, 'id']
-mesh.many.vals <- vector('list', length(mesh.many.id))
+mesh.vec <-
+  mesh[mesh.vals.id,1:2,] - array(mesh.fin[,2:3], c(nrow(mesh.fin),2,3))
+
+# compute angles between the triangle vertices
+
+mesh.ang.1 <- acos(
+  rowSums(mesh.vec[,,1] * mesh.vec[,,2]) /
+  (sqrt(rowSums(mesh.vec[,,1]^2)) * sqrt(rowSums(mesh.vec[,,2]^2)))
+)
+mesh.ang.2 <- acos(
+  rowSums(mesh.vec[,,2] * mesh.vec[,,3]) /
+  (sqrt(rowSums(mesh.vec[,,2]^2)) * sqrt(rowSums(mesh.vec[,,3]^2)))
+)
+mesh.ang.3 <- acos(
+  rowSums(mesh.vec[,,3] * mesh.vec[,,1]) /
+  (sqrt(rowSums(mesh.vec[,,3]^2)) * sqrt(rowSums(mesh.vec[,,1]^2)))
+)
+# points that are within their triangles will have a sum of angles equal to 2pi
+
+points.in <- as.data.frame(
+  mesh.fin[(mesh.ang.1 + mesh.ang.2 + mesh.ang.3 >= 2 * pi),]
+)
+ggplot(as.data.frame(mesh3), aes(x=V2, y=V3, group=V1)) +
+  geom_polygon(color='blue', size=.2, alpha=.4) +
+  geom_point(
+    color='red', data=points.in, aes(x=x.int, y=y.int, group=NULL), size=.1
+  ) +
+  coord_cartesian(xlim=c(3,7), ylim=c(3,7)) +
+  geom_polygon(
+    data=as.data.frame(t(mesh[9718,,][1:2,])), aes(V1, V2, group=21435145123),
+    color='red', fill='blue'
+  )
+
+  mesh[
+  which(
+    mesh[,1,1] <= 7 & mesh[,1,1] >= 3 &
+    mesh[,2,1] <= 7 & mesh[,2,1] >= 3 &
+    mesh[,1,2] <= 7 & mesh[,1,2] >= 3 &
+    mesh[,2,2] <= 7 & mesh[,2,2] >= 3 &
+    mesh[,1,3] <= 7 & mesh[,1,3] >= 3 &
+    mesh[,2,3] <= 7 & mesh[,2,3] >= 3
+  )[8]
+    ,,
+  ]
 
 mesh.int.res <- cbind(id=rep(mesh.int[, 'id'], mesh.int.len), x=0, y=0)
 
@@ -127,7 +188,8 @@ mesh.int <- mesh.int[
   mesh.int[, 'ymin'] < mesh.int[, 'ymax'],
 ]
 
-
+ggplot(as.data.frame(t(mesh[26,,][1:2,]))) +
+geom_polygon(aes(V1, V2)
 
 y.exp <- exp * diff(y.rng)
 y.int <- seq(from=y.rng[1] - y.exp, to=y.rng[2] + y.exp, length.out=res.y)
