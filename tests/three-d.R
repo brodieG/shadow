@@ -138,37 +138,33 @@ candidate_points <- function(mesh) {
   # for each triangle, generate the set of integer coordinates that it could
   # contain.
 
-  points.int.len.x <- pmax(points.int[, 'xmax'] - points.int[, 'xmin'] + 1, 0)
-  points.int.len.y <- pmax(points.int[, 'ymax'] - points.int[, 'ymin'] + 1, 0)
-  points.int.len <- points.int.len.x * points.int.len.y
+  p.int.len.x <- pmax(points.int[, 'xmax'] - points.int[, 'xmin'] + 1, 0)
+  p.int.len.y <- pmax(points.int[, 'ymax'] - points.int[, 'ymin'] + 1, 0)
+  p.int.len <- p.int.len.x * p.int.len.y
 
-  # Use linearized coords that we'll decompose into x/y later
+  # For each id, need the equivalent of `expand.grid` of the xmin:xmax and
+  # ymin:ymax sequences.  The following logic replicates that by doing it for
+  # 1:(xmax-xmin) and 1:(ymax-ymin); we add back xmin and xmax later.  Contorted
+  # logic is to minimize calls to R functions as this is bottleneck.
 
-  points.int.coords <- matrix(seq_len(res.x * res.y), nrow=res.x)
-  mesh.id.exp <- points.int[points.int.len > 0, 'id']
-  points.vals <- vector('list', length(mesh.id.exp))
+  seq.id <- rep(points.int[, 'id'], p.int.len)
+  seq.x <- rep(sequence(p.int.len.x), rep(p.int.len.y, p.int.len.x)) - 1L
+  seq.x.delta <- which(c(FALSE, diff(seq.x) != 0L | diff(seq.id) != 0L))
 
-  for(i in seq_along(mesh.id.exp))  {
-    point <- points.int[mesh.id.exp[i],]
-    points.vals[[i]] <- cbind(
-      id=mesh.id.exp[i],
-      coord=c(
-        points.int.coords[
-          point['xmin']:point['xmax'],
-          point['ymin']:point['ymax']
-  ] ) ) }
-  points.vals.raw <- do.call(rbind, points.vals)
+  seq.y <- integer(length(seq.x))
+  seq.y[seq.x.delta] <- seq.x.delta - 1L
+  seq.y <- seq_along(seq.y) - cummax(seq.y)
 
-  # recover x/y integer coordinates from the linearized ones
+  # add back xmin and xmax
 
   cbind(
-    id=points.vals.raw[, 'id'],
-    x.int=((points.vals.raw[, 'coord'] - 1) %% res.x) + 1,
-    y.int=((points.vals.raw[, 'coord'] - 1) %/% res.x) + 1
+    id=seq.id,
+    x.int=seq.x + points.int[seq.id, 'xmin'],
+    y.int=seq.y + points.int[seq.id, 'ymin']
   )
 }
 points.raw <- candidate_points(mesh)
-
+#
 # Remove all points that are not actually within their mesh triangle
 
 trim_points <- function(points, mesh) {
@@ -250,14 +246,14 @@ points <- drop_hidden_points(points.dat)
 # untransformed
 
 stop()
-
-ggplot(as.data.frame(mesh3), aes(x=V2, y=V3, group=V1)) +
-  # geom_polygon(size=.2, alpha=.4) +
-  geom_point(
-    data=as.data.frame(points), aes(x=x.int, y=y.int, group=NULL, color=t)
-  ) +
+ggplot(data=as.data.frame(points)) +
+  geom_point(aes(x=x.int, y=y.int, group=NULL, color=shadow)) +
   scale_color_gradient(low='#333333', high='#ffffff', guide=FALSE)
-  coord_cartesian(xlim=c(26,30), ylim=c(15,20))
+
+#ggplot(as.data.frame(mesh3), aes(x=V2, y=V3, group=V1)) +
+  # geom_polygon(size=.2, alpha=.4) +
+  # scale_color_gradient(low='#333333', high='#ffffff', guide=FALSE)
+  # coord_cartesian(xlim=c(26,30), ylim=c(15,20))
 #   geom_polygon(
 #     data=as.data.frame(t(mesh[9718,,][1:2,])), aes(V1, V2, group=21435145123),
 #     color='red', fill='blue'
