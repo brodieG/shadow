@@ -23,38 +23,22 @@ rot_z <- function(deg) {
   )
 }
 
-eltif <- raster::raster("~/Downloads/dem_01.tif")
-elmat1 <- matrix(
-  raster::extract(eltif,raster::extent(eltif),buffer=10000),
-  nrow=ncol(eltif),ncol=nrow(eltif)
-)
-mx <- elmat1
+# eltif <- raster::raster("~/Downloads/dem_01.tif")
+# elmat1 <- matrix(
+#   raster::extract(eltif,raster::extent(eltif),buffer=10000),
+#   nrow=ncol(eltif),ncol=nrow(eltif)
+# )
+# mx2 <- volcano
+# mx2 <- elmat1
+# sun <- 135
+# els <- seq(-90, 90, length=25)
+# sh2 <- rayshader::ray_shade(mx2, els, sun, lambert=FALSE)
+# sh2 <- sh2[, rev(seq_len(ncol(sh2)))]
 
-mx2 <- volcano
-mx2 <- elmat1
-sun <- 135
-els <- seq(-90, 90, length=25)
-sh2 <- rayshader::ray_shade(mx2, els, sun, lambert=FALSE)
-sh2 <- sh2[, rev(seq_len(ncol(sh2)))]
+# Convert matrix to long format, and rotate
 
 mxl <- cbind(x=c(row(mx2)), y=c(col(mx2)), z=c(mx2))
-mxlr <- mxl %*%
-  t(rot_z(215)) %*%
-  t(rot_x(-30))
-
-# Translate so that lowest y value is zero
-
-mxlr[,2] <- mxlr[,2] - min(mxlr[,2])
-
-# width <- 800
-# height <- 800
-# 
-# open3d()
-# par3d(windowRect=c(0,0,width,height))
-# par3d(viewport=c(0,0,width,height))
-# points3d(mxlr, col=rgb(cbind(c(sh2), c(sh2), c(sh2))))
-# spheres3d(obs, col='red')
-# axes3d()
+mxlr <- mxl %*% t(rot_z(215)) %*% t(rot_x(-30))
 
 # Account for perspective; this is not correct as we're doing it purely on the
 # basis of how far from the observer we are along the y axis, instead of actual
@@ -80,232 +64,202 @@ mxlrp <- mxlr
 # set of tiles where the points represent the vertices of each tile.  Start by
 # transforming our point data into tile data
 
-res.x <- 120
-res.y <- 100
+res.x <- 600
+res.y <- 500
 
-mxres <- cbind(mxlrp, c(sh2), dist.to.obs)
+# Add meta data, and rescale x,y values into 1:res.x and 1:res.y
+
+mxres <- cbind(mxlrp, shadow=c(sh2), dist=dist.to.obs)
 mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) *
   (res.y - 1) + 1
 mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
   (res.x - 1) + 1
 
-# Break up our data into a triangular mesh, first by doing a tile mesh, and then
-# splitting each tile in two.  The tile is derived from the grid by collecting
-# the top lef, top right, bottom left, and bottom right coords (these are
-# represented by the 3rd dimension of the array).
+# Generate coordinates for triangular mesh from our points.
 
-nr <- nrow(mx2)
-nc <- ncol(mx2)
-lr.lc <- -c(seq_len(nc) * nr, seq_len(nr) + nr * (nc - 1L))
-lr.fc <- -c(seq_len(nc) * nr, seq_len(nr))
-fr.lc <- -c((seq_len(nc) - 1L) * nr + 1L, seq_len(nr) + nr * (nc - 1L))
-fr.fc <- -c((seq_len(nc) - 1L) * nr + 1L, seq_len(nr))
+triangular_mesh <- function(dat, nr, nc) {
+  stopifnot(identical(dim(dat)[2], 5L), nr * nc == nrow(dat))
 
-tile.mesh <- c(
-  mxres[lr.lc,],# drop last row, last col
-  mxres[lr.fc,],# drop last row, first col
-  mxres[fr.lc,],# drop first row, last col
-  mxres[fr.fc,]# drop first row, first col
-)
-# also generate ids to track mesh elements back to original points (debugging)
+  # create a tile mesh by combining four copies of our original matrix,
+  # dropping first/last row/col in turn.  The arithmetic is to map location
+  # of first/last row/col to our long input matrix `dat`.
 
-mxres.id <- seq_len(nrow(mxres))
-tile.mesh.id <-
-  c(mxres.id[lr.lc], mxres.id[lr.fc], mxres.id[fr.lc], mxres.id[fr.fc])
+  lr.lc <- -c(seq_len(nc) * nr, seq_len(nr) + nr * (nc - 1L))
+  lr.fc <- -c(seq_len(nc) * nr, seq_len(nr))
+  fr.lc <- -c((seq_len(nc) - 1L) * nr + 1L, seq_len(nr) + nr * (nc - 1L))
+  fr.fc <- -c((seq_len(nc) - 1L) * nr + 1L, seq_len(nr))
 
-dim(tile.mesh) <- c(length(tile.mesh) / (4L * ncol(mxres)), ncol(mxres), 4L)
-dim(tile.mesh.id) <- c(length(tile.mesh.id) / 4L, 4L)
+  tile.mesh <- c(
+    dat[lr.lc,],   # drop last row, last col
+    dat[lr.fc,],   # drop last row, first col
+    dat[fr.lc,],   # drop first row, last col
+    dat[fr.fc,]    # drop first row, first col
+  )
+  # store mesh data in a 3D array, where the indices of the 3rd dimension
+  # represent which vertex of the mesh element is described.
 
-# now split into triangles
+  dim(tile.mesh) <- c(length(tile.mesh) / (4L * ncol(dat)), ncol(dat), 4L)
 
-mesh <- array(0, c(nrow(tile.mesh)*2,ncol(tile.mesh),3))
-mesh[seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,1:3]
-mesh[-seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,2:4]
-mesh.id <- matrix(0, nrow(tile.mesh.id) * 2, 3)
-mesh.id[seq_len(nrow(tile.mesh.id)), ] <- tile.mesh.id[,1:3]
-mesh.id[-seq_len(nrow(tile.mesh.id)), ] <- tile.mesh.id[,2:4]
+  # now split tiles into triangles
 
-# visual check that our mesh makes sense
+  mesh <- array(0, c(nrow(tile.mesh)*2,ncol(tile.mesh),3))
+  mesh[seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,1:3]
+  mesh[-seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,2:4]
+  mesh
+}
+mesh <- triangular_mesh(mxres, nr=nrow(mx2), nc=ncol(mx2))
 
-mesh2 <- aperm(mesh, c(1, 3, 2))
-mesh3 <- cbind(
-  rep(seq_len(nrow(mesh2)), each=ncol(mesh2)),
-  c(t(mesh2[,,1])), c(t(mesh2[,,2]))
-)
+# For each triangle in the mesh, determine which points in the integer grid
+# could potentially be in the mesh
+
+candidate_points <- function(mesh) {
+  stopifnot(identical(dim(mesh)[2:3], c(5L,3L)))
+
+  # assume all points between max and min on y/x could be in mesh
+  points.int <- cbind(
+    id=seq_len(nrow(mesh)),
+    xmin=pmin(mesh[,1L,1L], mesh[,1L,2L], mesh[,1L,3L]),
+    xmax=pmax(mesh[,1L,1L], mesh[,1L,2L], mesh[,1L,3L]),
+    ymin=pmin(mesh[,2L,1L], mesh[,2L,2L], mesh[,2L,3L]),
+    ymax=pmax(mesh[,2L,1L], mesh[,2L,2L], mesh[,2L,3L])
+  )
+  # don't allow the maxs to be exactly at the boundary
+
+  xmax.bad <- points.int[,'xmax'] == floor(points.int[,'xmax'])
+  points.int[xmax.bad, 'xmax'] <- points.int[xmax.bad, 'xmax'] -
+    (points.int[xmax.bad, 'xmax'] - points.int[xmax.bad, 'xmin']) * .01
+  ymax.bad <- points.int[,'ymax'] == floor(points.int[,'ymax'])
+  points.int[ymax.bad, 'ymax'] <- points.int[ymax.bad, 'ymax'] -
+    (points.int[ymax.bad, 'ymax'] - points.int[ymax.bad, 'ymin']) * .01
+
+  points.int[, c('xmin', 'ymin')] <- ceiling(points.int[, c('xmin', 'ymin')])
+  points.int[, c('xmax', 'ymax')] <- floor(points.int[, c('xmax', 'ymax')])
+
+  # for each triangle, generate the set of integer coordinates that it could
+  # contain.
+
+  points.int.len.x <- pmax(points.int[, 'xmax'] - points.int[, 'xmin'] + 1, 0)
+  points.int.len.y <- pmax(points.int[, 'ymax'] - points.int[, 'ymin'] + 1, 0)
+  points.int.len <- points.int.len.x * points.int.len.y
+
+  # Use linearized coords that we'll decompose into x/y later
+
+  points.int.coords <- matrix(seq_len(res.x * res.y), nrow=res.x)
+  mesh.id.exp <- points.int[points.int.len > 0, 'id']
+  points.vals <- vector('list', length(mesh.id.exp))
+
+  for(i in seq_along(mesh.id.exp))  {
+    point <- points.int[mesh.id.exp[i],]
+    points.vals[[i]] <- cbind(
+      id=mesh.id.exp[i],
+      coord=c(
+        points.int.coords[
+          point['xmin']:point['xmax'],
+          point['ymin']:point['ymax']
+  ] ) ) }
+  points.vals.raw <- do.call(rbind, points.vals)
+
+  # recover x/y integer coordinates from the linearized ones
+
+  cbind(
+    id=points.vals.raw[, 'id'],
+    x.int=((points.vals.raw[, 'coord'] - 1) %% res.x) + 1,
+    y.int=((points.vals.raw[, 'coord'] - 1) %/% res.x) + 1
+  )
+}
+points.raw <- candidate_points(mesh)
+
+# Remove all points that are not actually within their mesh triangle
+
+trim_points <- function(points, mesh) {
+  stopifnot(ncol(points) == 3, identical(dim(mesh)[-1], c(5L,3L)))
+
+  # For each point, compute the vectors from that point to each of the vertices
+  # of the mesh triangle we are checking it is in
+
+  vecs <- mesh[points[,'id'],1:2,] - array(points[,2:3], c(nrow(points),2,3))
+
+  # compute angles between the triangle vertices: a . b = |a||b| cos(p)
+
+  sqrRsq <- function(x) sqrt(rowSums(x^2))
+
+  mesh.ang.1 <-
+    acos(rowSums(vecs[,,1]*vecs[,,2]) / (sqrRsq(vecs[,,1])*sqrRsq(vecs[,,2])))
+  mesh.ang.2 <-
+    acos(rowSums(vecs[,,2]*vecs[,,3]) / (sqrRsq(vecs[,,2])*sqrRsq(vecs[,,3])))
+  mesh.ang.3 <-
+    acos(rowSums(vecs[,,3]*vecs[,,1]) / (sqrRsq(vecs[,,3])*sqrRsq(vecs[,,1])))
+
+  # points that are within their triangles will have a sum of angles equal to
+  # 2pi Need to be a little more generous for precision pruposes, could lead to
+  # incorrect determinations in very corner cases
+
+  points[(mesh.ang.1 + mesh.ang.2 + mesh.ang.3 >= 2 * pi - 1e-6),]
+}
+points.t <- trim_points(points.raw, mesh)
+
+# Compute meta data for each point
+#
+# We need the shadow value, as well as the distance from observer.  We will do
+# the distance weighted average of the mesh triangle vertex values which contain
+# this information.
+
+points_meta <- function(p, m) {
+  m.dist <- sqrt(
+    rowSums(
+      aperm(
+        (m[p[,'id'],1:2,] - array(p[,2:3],c(nrow(p),2,3))) ^ 2,
+        c(1, 3, 2)
+      ),
+      dims=2
+  ) )
+  p.shadow <- rowSums(m[p[,'id'], 4,] * (1/m.dist)) / rowSums(1/m.dist)
+  p.dist <- rowSums(m[p[,'id'], 5,] * (1/m.dist)) / rowSums(1/m.dist)
+  cbind(p, shadow=p.shadow, dist=p.dist)
+}
+points.dat <- points_meta(points.t, mesh)
+
+# Drop points hidden by others
+#
+# We use distance from observer, and keep only closest points for any given
+# x,y coordinate.  Basically, we order all points by distance, and then drop any
+# duplicated x,y coordinates so that we just keep the first of each.
+
+drop_hidden_points <- function(p) {
+  in.id <- seq_len(nrow(p))
+  dist.ord <- order(p[,'dist'])
+
+  id.unique <- -in.id[dist.ord][duplicated(p[dist.ord, 2:3])]
+  p[id.unique,,drop=FALSE]
+}
+points <- drop_hidden_points(points.dat)
+
+# mesh2 <- aperm(mesh, c(1, 3, 2))
+# mesh3 <- cbind(
+#   rep(seq_len(nrow(mesh2)), each=ncol(mesh2)),
+#   c(t(mesh2[,,1])), c(t(mesh2[,,2]))
+# )
 # Need to reorder points in the mesh
 
 # ggplot(as.data.frame(mesh3), aes(V2, V3, group=V1)) +
 #  geom_polygon(color='grey', size=.2)
 
-# For each triangle in the mesh, determine the set of integer x,y coordinates
-# that could conceivably be in that triangle.
-
-mesh.int <- cbind(
-  id=seq_len(dim(mesh)[1]),
-  xmin=pmin(mesh[,1L,1L], mesh[,1L,2L], mesh[,1L,3L]),
-  xmax=pmax(mesh[,1L,1L], mesh[,1L,2L], mesh[,1L,3L]),
-  ymin=pmin(mesh[,2L,1L], mesh[,2L,2L], mesh[,2L,3L]),
-  ymax=pmax(mesh[,2L,1L], mesh[,2L,2L], mesh[,2L,3L])
-)
-# don't allow the maxs to be exactly at the boundary
-
-xmax.bad <- mesh.int[,'xmax'] == floor(mesh.int[,'xmax'])
-mesh.int[xmax.bad, 'xmax'] <- mesh.int[xmax.bad, 'xmax'] -
-  (mesh.int[xmax.bad, 'xmax'] - mesh.int[xmax.bad, 'xmin']) * .01
-ymax.bad <- mesh.int[,'ymax'] == floor(mesh.int[,'ymax'])
-mesh.int[ymax.bad, 'ymax'] <- mesh.int[ymax.bad, 'ymax'] -
-  (mesh.int[ymax.bad, 'ymax'] - mesh.int[ymax.bad, 'ymin']) * .01
-
-mesh.int[, c('xmin', 'ymin')] <- ceiling(mesh.int[, c('xmin', 'ymin')])
-mesh.int[, c('xmax', 'ymax')] <- floor(mesh.int[, c('xmax', 'ymax')])
-
-# for each triangle, generate the set of integer coordinates that it could
-# contain.
-
-mesh.int.len.x <- pmax(mesh.int[, 'xmax'] - mesh.int[, 'xmin'] + 1, 0)
-mesh.int.len.y <- pmax(mesh.int[, 'ymax'] - mesh.int[, 'ymin'] + 1, 0)
-mesh.int.len <- mesh.int.len.x * mesh.int.len.y
-
-# Use linearized coords that we'll decompose into x/y later
-
-mesh.int.coords <- matrix(seq_len(res.x * res.y), nrow=res.x)
-mesh.id.exp <- mesh.int[mesh.int.len > 0, 'id']
-mesh.vals <- vector('list', length(mesh.id.exp))
-
-for(i in seq_along(mesh.id.exp))  {
-  mesh.dat <- mesh.int[mesh.id.exp[i],]
-  mesh.vals[[i]] <- cbind(
-    id=mesh.id.exp[i],
-    coord=c(
-      mesh.int.coords[
-        mesh.dat['xmin']:mesh.dat['xmax'],
-        mesh.dat['ymin']:mesh.dat['ymax']
-] ) ) }
-mesh.vals.raw <- do.call(rbind, mesh.vals)
-
-# recover x/y integer coordinates, and compute the x for the edges
-
-mesh.vals.id <- mesh.vals.raw[, 'id']
-mesh.fin <- cbind(
-  id=mesh.vals.id,
-  x.int=((mesh.vals.raw[, 'coord'] - 1) %% res.x) + 1,
-  y.int=((mesh.vals.raw[, 'coord'] - 1) %/% res.x) + 1
-)
 # compute vectors from integer points to the triangle vertices
-
-mesh.vec <-
-  mesh[mesh.vals.id,1:2,] - array(mesh.fin[,2:3], c(nrow(mesh.fin),2,3))
-
-# compute angles between the triangle vertices
-
-mesh.ang.1 <- acos(
-  rowSums(mesh.vec[,,1] * mesh.vec[,,2]) /
-  (sqrt(rowSums(mesh.vec[,,1]^2)) * sqrt(rowSums(mesh.vec[,,2]^2)))
-)
-mesh.ang.2 <- acos(
-  rowSums(mesh.vec[,,2] * mesh.vec[,,3]) /
-  (sqrt(rowSums(mesh.vec[,,2]^2)) * sqrt(rowSums(mesh.vec[,,3]^2)))
-)
-mesh.ang.3 <- acos(
-  rowSums(mesh.vec[,,3] * mesh.vec[,,1]) /
-  (sqrt(rowSums(mesh.vec[,,3]^2)) * sqrt(rowSums(mesh.vec[,,1]^2)))
-)
-# points that are within their triangles will have a sum of angles equal to 2pi
-# Need to be a little more generous for precision pruposes, could lead to
-# incorrect determinations in very corner cases
-
-mesh.in <- mesh.fin[(mesh.ang.1 + mesh.ang.2 + mesh.ang.3 >= 2 * pi - 1e-6),]
-
-# We need Z values and textures for each of the points we found.  Use the
-# x-y distance weighted averages of the three points
-
-mesh.dist <- sqrt(
-  rowSums(
-    aperm(
-      (
-        mesh[mesh.in[, 'id'], 1:2,] -
-        array(rep(mesh.in[, 2:3], 3), c(nrow(mesh.in), 2, 3))
-      ) ^ 2,
-      c(1, 3, 2)
-    ),
-    dims=2
-) )
-mesh.t <- rowSums(mesh[mesh.in[, 'id'], 4,] * (1/mesh.dist)) /
-  rowSums(1/mesh.dist)
-mesh.d <- rowSums(mesh[mesh.in[, 'id'], 5,] * (1/mesh.dist)) /
-  rowSums(1/mesh.dist)
-
-insp <- c(6280, 6800, 9228)
-insp.in <- which(mesh.in[, 'x.int'] == 88 & mesh.in[, 'y.int'] == 75)
-
-mesh.d2 <- rowSums(mesh[insp, 5,] * (1/mesh.dist[insp.in,])) /
-  rowSums(1/mesh.dist[insp.in,])
 
 # Drop duplicates x-y values; we keep those closest to the observer; use
 # untransformed
 
-in.id <- seq_len(nrow(mesh.in))
-dist.ord <- order(mesh.d)
+stop()
 
-id.unique <- -in.id[dist.ord][duplicated(mesh.in[dist.ord, 2:3])]
-mesh.in.unique <- mesh.in[id.unique,]
-mesh.t.unique <- mesh.t[id.unique]
-
-mesh.in2 <- mesh.in[insp.in,]
-in.id2 <- seq_len(nrow(mesh.in2))
-dist.ord2 <- order(mesh.d2)
-id.unique2 <- -in.id2[dist.ord2][duplicated(mesh.in2[dist.ord2, 2:3])]
-
-id.unique <- -in.id[dist.ord][duplicated(mesh.in[dist.ord, 2:3])]
-mesh.in.unique <- mesh.in[id.unique,]
-mesh.t.unique <- mesh.t[id.unique]
-
-
-points.in <- as.data.frame(cbind(mesh.in.unique, t=mesh.t.unique))
 ggplot(as.data.frame(mesh3), aes(x=V2, y=V3, group=V1)) +
   # geom_polygon(size=.2, alpha=.4) +
-  geom_point(data=points.in, aes(x=x.int, y=y.int, group=NULL, color=t))
+  geom_point(
+    data=as.data.frame(points), aes(x=x.int, y=y.int, group=NULL, color=t)
+  ) +
+  scale_color_gradient(low='#333333', high='#ffffff', guide=FALSE)
   coord_cartesian(xlim=c(26,30), ylim=c(15,20))
 #   geom_polygon(
 #     data=as.data.frame(t(mesh[9718,,][1:2,])), aes(V1, V2, group=21435145123),
 #     color='red', fill='blue'
 #   )
-
-ids <- mesh.in[mesh.in[, 'x.int'] == 88 & mesh.in[, 'y.int'] == 75,'id']
-spheres3d(mxlr[c(t(mesh.id[ids,])),], color='blue')
-
-  mesh[
-  which(
-    mesh[,1,1] <= 7 & mesh[,1,1] >= 3 &
-    mesh[,2,1] <= 7 & mesh[,2,1] >= 3 &
-    mesh[,1,2] <= 7 & mesh[,1,2] >= 3 &
-    mesh[,2,2] <= 7 & mesh[,2,2] >= 3 &
-    mesh[,1,3] <= 7 & mesh[,1,3] >= 3 &
-    mesh[,2,3] <= 7 & mesh[,2,3] >= 3
-  )[8]
-    ,,
-  ]
-
-mesh.int.res <- cbind(id=rep(mesh.int[, 'id'], mesh.int.len), x=0, y=0)
-
-mesh.int <- mesh.int[
-  mesh.int[, 'xmin'] < mesh.int[, 'xmax'] &
-  mesh.int[, 'ymin'] < mesh.int[, 'ymax'],
-]
-
-ggplot(as.data.frame(t(mesh[26,,][1:2,]))) +
-geom_polygon(aes(V1, V2)
-
-y.exp <- exp * diff(y.rng)
-y.int <- seq(from=y.rng[1] - y.exp, to=y.rng[2] + y.exp, length.out=res.y)
-
-x.rng <- range(mxlrp[,1])
-x.exp <- exp * diff(x.rng)
-x.int <- seq(from=x.rng[1] - x.exp, to=x.rng[2] + x.exp, length.out=res.x)
-
-y <- findInterval(mxlrp[,2], y.int)
-x <- findInterval(mxlrp[,1], x.int)
-
-library(ggplot2)
-ggplot(data.frame(x=x, y=y, z=c(sh2))) + geom_point(aes(x, y, color=z))
 
