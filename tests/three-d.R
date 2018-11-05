@@ -1,3 +1,27 @@
+rot_x <- function(deg) {
+  r <- deg / 180 * pi
+  matrix(byrow=TRUE, nrow=3, c(
+         1,       0,       0,
+         0,  cos(r), -sin(r),
+         0,  sin(r),  cos(r))
+  )
+}
+rot_y <- function(deg) {
+  r <- deg / 180 * pi
+  matrix(byrow=TRUE, nrow=3, c(
+    cos(r),       0,  sin(r),
+         0,       1,       0,
+   -sin(r),       0,  cos(r))
+  )
+}
+rot_z <- function(deg) {
+  r <- deg / 180 * pi
+  matrix(byrow=TRUE, nrow=3, c(
+    cos(r), -sin(r),       0,
+    sin(r),  cos(r),       0,
+         0,       0,       1)
+  )
+}
 
 
 mx2 <- volcano
@@ -15,19 +39,30 @@ mxlr <- mxl %*%
 
 mxlr[,2] <- mxlr[,2] - min(mxlr[,2])
 
+clear3d()
+spheres3d(mxlr, col=rgb(cbind(c(sh2), c(sh2), c(sh2))))
+
 # Account for perspective; this is not correct as we're doing it purely on the
 # basis of how far from the observer we are along the y axis, instead of actual
 # distance.
 
-obs <- t(matrix(c(0, -.5 * diff(range(mxlr[,2])), mean(mxlr[,3]))))
+obs <- t(matrix(
+  c(
+    diff(range(mxlr[,1])) / 2 + min(mxlr[,1]),
+    -(diff(range(mxlr[,2])) / 2 + min(mxlr[,2])),
+    diff(range(mxlr[,3])) / 2 + min(mxlr[,3])
+  )
+)
+dist.to.obs <- sqrt(colSums((t(mxlr) - c(obs))^2))
+
 fovh <- 60 / 180 * pi
 fovv <- 60 / 180 * pi
 
 mxlrp <- mxlr
-mxlrp[,1] <- mxlrp[,1] / ((mxlrp[,2] - obs[,2]) * tan(fovh) / 2)
-mxlrp[,3] <- mxlrp[,3] / ((mxlrp[,2] - obs[,2]) * tan(fovv) / 2)
+# mxlrp[,1] <- mxlrp[,1] / ((mxlrp[,2] - obs[,2]) * tan(fovh) / 2)
+# mxlrp[,3] <- mxlrp[,3] / ((mxlrp[,2] - obs[,2]) * tan(fovv) / 2)
 
-ggplot(as.data.frame(mxlrp)) + geom_point(aes(V1, V2, color=c(sh2)))
+# ggplot(as.data.frame(mxlrp)) + geom_point(aes(V1, V2, color=c(sh2)))
 
 # Project onto a canvas, we will do this by interpreting our grid of points as a
 # set of tiles where the points represent the vertices of each tile.  Start by
@@ -36,7 +71,7 @@ ggplot(as.data.frame(mxlrp)) + geom_point(aes(V1, V2, color=c(sh2)))
 res.x <- 120
 res.y <- 100
 
-mxres <- mxlrp
+mxres <- cbind(mxlrp, c(sh2), dist.to.obs)
 mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) *
   (res.y - 1) + 1
 mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
@@ -49,36 +84,46 @@ mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
 
 nr <- nrow(mx2)
 nc <- ncol(mx2)
+lr.lc <- -c(seq_len(nc) * nr, seq_len(nr) + nr * (nc - 1L))
+lr.fc <- -c(seq_len(nc) * nr, seq_len(nr))
+fr.lc <- -c((seq_len(nc) - 1L) * nr + 1L, seq_len(nr) + nr * (nc - 1L))
+fr.fc <- -c((seq_len(nc) - 1L) * nr + 1L, seq_len(nr))
+
 tile.mesh <- c(
-  # drop last row, last col
-  mxres[-c(seq_len(nc) * nr, seq_len(nr) + nr * (nc - 1L)),],
-  # drop last row, first col
-  mxres[-c(seq_len(nc) * nr, seq_len(nr)),],
-  # drop first row, last col
-  mxres[-c((seq_len(nc) - 1L) * nr + 1L, seq_len(nr) + nr * (nc - 1L)), ],
-  # drop first row, first col
-  mxres[-c((seq_len(nc) - 1L) * nr + 1L, seq_len(nr)), ]
+  mxres[lr.lc,],# drop last row, last col
+  mxres[lr.fc,],# drop last row, first col
+  mxres[fr.lc,],# drop first row, last col
+  mxres[fr.fc,]# drop first row, first col
 )
-mesh.id <- matrix(seq_len(length(mx2)), nrow=nr)[-nr, -nc]
-dim(tile.mesh) <- c(c(length(tile.mesh) / 12L), 3L, 4L)
+# also generate ids to track mesh elements back to original points (debugging)
+
+mxres.id <- seq_len(nrow(mxres))
+tile.mesh.id <-
+  c(mxres.id[lr.lc], mxres.id[lr.fc], mxres.id[fr.lc], mxres.id[fr.fc])
+
+dim(tile.mesh) <- c(length(tile.mesh) / (4L * ncol(mxres)), ncol(mxres), 4L)
+dim(tile.mesh.id) <- c(length(tile.mesh.id) / 4L, 4L)
 
 # now split into triangles
 
-mesh <- array(0, c(nrow(tile.mesh) * 2, 3, 3))
+mesh <- array(0, c(nrow(tile.mesh)*2,ncol(tile.mesh),3))
 mesh[seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,1:3]
 mesh[-seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,2:4]
+mesh.id <- matrix(0, nrow(tile.mesh.id) * 2, 3)
+mesh.id[seq_len(nrow(tile.mesh.id)), ] <- tile.mesh.id[,1:3]
+mesh.id[-seq_len(nrow(tile.mesh.id)), ] <- tile.mesh.id[,2:4]
 
 # visual check that our mesh makes sense
 
 mesh2 <- aperm(mesh, c(1, 3, 2))
 mesh3 <- cbind(
-  rep(seq_len(nrow(mesh2)),
-  each=ncol(mesh2)), c(t(mesh2[,,1])), c(t(mesh2[,,2]))
+  rep(seq_len(nrow(mesh2)), each=ncol(mesh2)),
+  c(t(mesh2[,,1])), c(t(mesh2[,,2]))
 )
 # Need to reorder points in the mesh
 
-ggplot(as.data.frame(mesh3), aes(V2, V3, group=V1)) +
-  geom_polygon(color='grey', size=.2)
+# ggplot(as.data.frame(mesh3), aes(V2, V3, group=V1)) +
+#  geom_polygon(color='grey', size=.2)
 
 # For each triangle in the mesh, determine the set of integer x,y coordinates
 # that could conceivably be in that triangle.
@@ -113,7 +158,7 @@ mesh.int.len <- mesh.int.len.x * mesh.int.len.y
 
 mesh.int.coords <- matrix(seq_len(res.x * res.y), nrow=res.x)
 mesh.id.exp <- mesh.int[mesh.int.len > 0, 'id']
-mesh.vals <- vector('list', length(mesh.many.id))
+mesh.vals <- vector('list', length(mesh.id.exp))
 
 for(i in seq_along(mesh.id.exp))  {
   mesh.dat <- mesh.int[mesh.id.exp[i],]
@@ -155,16 +200,58 @@ mesh.ang.3 <- acos(
 )
 # points that are within their triangles will have a sum of angles equal to 2pi
 # Need to be a little more generous for precision pruposes, could lead to
-# incorrecte determinations in very corner cases
+# incorrect determinations in very corner cases
 
-points.in <- as.data.frame(
-  mesh.fin[(mesh.ang.1 + mesh.ang.2 + mesh.ang.3 >= 2 * pi - 1e-6),]
-)
+mesh.in <- mesh.fin[(mesh.ang.1 + mesh.ang.2 + mesh.ang.3 >= 2 * pi - 1e-6),]
+
+# We need Z values and textures for each of the points we found.  Use the
+# x-y distance weighted averages of the three points
+
+mesh.dist <- sqrt(
+  rowSums(
+    aperm(
+      (
+        mesh[mesh.in[, 'id'], 1:2,] -
+        array(rep(mesh.in[, 2:3], 3), c(nrow(mesh.in), 2, 3))
+      ) ^ 2,
+      c(1, 3, 2)
+    ),
+    dims=2
+) )
+mesh.t <- rowSums(mesh[mesh.in[, 'id'], 4,] * (1/mesh.dist)) /
+  rowSums(1/mesh.dist)
+mesh.d <- rowSums(mesh[mesh.in[, 'id'], 5,] * (1/mesh.dist)) /
+  rowSums(1/mesh.dist)
+
+insp <- c(6280, 6800, 9228)
+insp.in <- which(mesh.in[, 'x.int'] == 88 & mesh.in[, 'y.int'] == 75)
+
+mesh.d2 <- rowSums(mesh[insp, 5,] * (1/mesh.dist[insp.in,])) /
+  rowSums(1/mesh.dist[insp.in,])
+
+# Drop duplicates x-y values; we keep those closest to the observer; use
+# untransformed
+
+in.id <- seq_len(nrow(mesh.in))
+dist.ord <- order(mesh.d)
+
+id.unique <- -in.id[dist.ord][duplicated(mesh.in[dist.ord, 2:3])]
+mesh.in.unique <- mesh.in[id.unique,]
+mesh.t.unique <- mesh.t[id.unique]
+
+mesh.in2 <- mesh.in[insp.in,]
+in.id2 <- seq_len(nrow(mesh.in2))
+dist.ord2 <- order(mesh.d2)
+id.unique2 <- -in.id2[dist.ord2][duplicated(mesh.in2[dist.ord2, 2:3])]
+
+id.unique <- -in.id[dist.ord][duplicated(mesh.in[dist.ord, 2:3])]
+mesh.in.unique <- mesh.in[id.unique,]
+mesh.t.unique <- mesh.t[id.unique]
+
+points.in <- as.data.frame(cbind(mesh.in.unique, t=mesh.t.unique))
 ggplot(as.data.frame(mesh3), aes(x=V2, y=V3, group=V1)) +
-  geom_polygon(color='blue', size=.2, alpha=.4) +
-  geom_point(
-    color='red', data=points.in, aes(x=x.int, y=y.int, group=NULL), size=.1
-  )
+  # geom_polygon(size=.2, alpha=.4) +
+  geom_point(data=points.in, aes(x=x.int, y=y.int, group=NULL, color=t))
   coord_cartesian(xlim=c(26,30), ylim=c(15,20))
 #   geom_polygon(
 #     data=as.data.frame(t(mesh[9718,,][1:2,])), aes(V1, V2, group=21435145123),
