@@ -23,8 +23,15 @@ rot_z <- function(deg) {
   )
 }
 
+eltif <- raster::raster("~/Downloads/dem_01.tif")
+elmat1 <- matrix(
+  raster::extract(eltif,raster::extent(eltif),buffer=10000),
+  nrow=ncol(eltif),ncol=nrow(eltif)
+)
+mx <- elmat1
 
 mx2 <- volcano
+mx2 <- elmat1
 sun <- 135
 els <- seq(-90, 90, length=25)
 sh2 <- rayshader::ray_shade(mx2, els, sun, lambert=FALSE)
@@ -39,21 +46,26 @@ mxlr <- mxl %*%
 
 mxlr[,2] <- mxlr[,2] - min(mxlr[,2])
 
-clear3d()
-spheres3d(mxlr, col=rgb(cbind(c(sh2), c(sh2), c(sh2))))
+# width <- 800
+# height <- 800
+# 
+# open3d()
+# par3d(windowRect=c(0,0,width,height))
+# par3d(viewport=c(0,0,width,height))
+# points3d(mxlr, col=rgb(cbind(c(sh2), c(sh2), c(sh2))))
+# spheres3d(obs, col='red')
+# axes3d()
 
 # Account for perspective; this is not correct as we're doing it purely on the
 # basis of how far from the observer we are along the y axis, instead of actual
 # distance.
 
-obs <- t(matrix(
-  c(
-    diff(range(mxlr[,1])) / 2 + min(mxlr[,1]),
-    -(diff(range(mxlr[,2])) / 2 + min(mxlr[,2])),
-    diff(range(mxlr[,3])) / 2 + min(mxlr[,3])
-  )
+obs <- c(
+  diff(range(mxlr[,1])) / 2 + min(mxlr[,1]),
+  diff(range(mxlr[,2])) / 2 + min(mxlr[,2]),
+  diff(range(mxlr[,3])) + max(mxlr[,3])
 )
-dist.to.obs <- sqrt(colSums((t(mxlr) - c(obs))^2))
+dist.to.obs <- sqrt(colSums((t(mxlr) - obs)^2))
 
 fovh <- 60 / 180 * pi
 fovv <- 60 / 180 * pi
@@ -248,6 +260,7 @@ id.unique <- -in.id[dist.ord][duplicated(mesh.in[dist.ord, 2:3])]
 mesh.in.unique <- mesh.in[id.unique,]
 mesh.t.unique <- mesh.t[id.unique]
 
+
 points.in <- as.data.frame(cbind(mesh.in.unique, t=mesh.t.unique))
 ggplot(as.data.frame(mesh3), aes(x=V2, y=V3, group=V1)) +
   # geom_polygon(size=.2, alpha=.4) +
@@ -257,6 +270,9 @@ ggplot(as.data.frame(mesh3), aes(x=V2, y=V3, group=V1)) +
 #     data=as.data.frame(t(mesh[9718,,][1:2,])), aes(V1, V2, group=21435145123),
 #     color='red', fill='blue'
 #   )
+
+ids <- mesh.in[mesh.in[, 'x.int'] == 88 & mesh.in[, 'y.int'] == 75,'id']
+spheres3d(mxlr[c(t(mesh.id[ids,])),], color='blue')
 
   mesh[
   which(
