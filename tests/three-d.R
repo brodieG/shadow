@@ -22,61 +22,6 @@ rot_z <- function(deg) {
          0,       0,       1)
   )
 }
-
-# eltif <- raster::raster("~/Downloads/dem_01.tif")
-# elmat1 <- matrix(
-#   raster::extract(eltif,raster::extent(eltif),buffer=10000),
-#   nrow=ncol(eltif),ncol=nrow(eltif)
-# )
-# mx2 <- volcano
-# mx2 <- elmat1
-# sun <- 135
-# els <- seq(-90, 90, length=25)
-# sh2 <- rayshader::ray_shade(mx2, els, sun, lambert=FALSE)
-# sh2 <- sh2[, rev(seq_len(ncol(sh2)))]
-
-# Convert matrix to long format, and rotate
-
-mxl <- cbind(x=c(row(mx2)), y=c(col(mx2)), z=c(mx2))
-mxlr <- mxl %*% t(rot_z(215)) %*% t(rot_x(-30))
-
-# Account for perspective; this is not correct as we're doing it purely on the
-# basis of how far from the observer we are along the y axis, instead of actual
-# distance.
-
-obs <- c(
-  diff(range(mxlr[,1])) / 2 + min(mxlr[,1]),
-  diff(range(mxlr[,2])) / 2 + min(mxlr[,2]),
-  diff(range(mxlr[,3])) + max(mxlr[,3])
-)
-dist.to.obs <- sqrt(colSums((t(mxlr) - obs)^2))
-
-fovh <- 60 / 180 * pi
-fovv <- 60 / 180 * pi
-
-mxlrp <- mxlr
-# mxlrp[,1] <- mxlrp[,1] / ((mxlrp[,2] - obs[,2]) * tan(fovh) / 2)
-# mxlrp[,3] <- mxlrp[,3] / ((mxlrp[,2] - obs[,2]) * tan(fovv) / 2)
-
-# ggplot(as.data.frame(mxlrp)) + geom_point(aes(V1, V2, color=c(sh2)))
-
-# Project onto a canvas, we will do this by interpreting our grid of points as a
-# set of tiles where the points represent the vertices of each tile.  Start by
-# transforming our point data into tile data
-
-res.x <- 600
-res.y <- 500
-
-# Add meta data, and rescale x,y values into 1:res.x and 1:res.y
-
-mxres <- cbind(mxlrp, shadow=c(sh2), dist=dist.to.obs)
-mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) *
-  (res.y - 1) + 1
-mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
-  (res.x - 1) + 1
-
-# Generate coordinates for triangular mesh from our points.
-
 triangular_mesh <- function(dat, nr, nc) {
   stopifnot(identical(dim(dat)[2], 5L), nr * nc == nrow(dat))
 
@@ -107,8 +52,6 @@ triangular_mesh <- function(dat, nr, nc) {
   mesh[-seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,2:4]
   mesh
 }
-mesh <- triangular_mesh(mxres, nr=nrow(mx2), nc=ncol(mx2))
-
 # For each triangle in the mesh, determine which points in the integer grid
 # could potentially be in the mesh
 
@@ -153,7 +96,7 @@ candidate_points <- function(mesh) {
 
   seq.y <- integer(length(seq.x))
   seq.y[seq.x.delta] <- seq.x.delta - 1L
-  seq.y <- seq_along(seq.y) - cummax(seq.y)
+  seq.y <- seq_along(seq.y) - cummax(seq.y) - 1L
 
   # add back xmin and xmax
 
@@ -163,7 +106,6 @@ candidate_points <- function(mesh) {
     y.int=seq.y + points.int[seq.id, 'ymin']
   )
 }
-points.raw <- candidate_points(mesh)
 #
 # Remove all points that are not actually within their mesh triangle
 
@@ -192,8 +134,6 @@ trim_points <- function(points, mesh) {
 
   points[(mesh.ang.1 + mesh.ang.2 + mesh.ang.3 >= 2 * pi - 1e-6),]
 }
-points.t <- trim_points(points.raw, mesh)
-
 # Compute meta data for each point
 #
 # We need the shadow value, as well as the distance from observer.  We will do
@@ -209,12 +149,10 @@ points_meta <- function(p, m) {
       ),
       dims=2
   ) )
-  p.shadow <- rowSums(m[p[,'id'], 4,] * (1/m.dist)) / rowSums(1/m.dist)
+  p.texture <- rowSums(m[p[,'id'], 4,] * (1/m.dist)) / rowSums(1/m.dist)
   p.dist <- rowSums(m[p[,'id'], 5,] * (1/m.dist)) / rowSums(1/m.dist)
-  cbind(p, shadow=p.shadow, dist=p.dist)
+  cbind(p, texture=p.texture, dist=p.dist)
 }
-points.dat <- points_meta(points.t, mesh)
-
 # Drop points hidden by others
 #
 # We use distance from observer, and keep only closest points for any given
@@ -226,9 +164,97 @@ drop_hidden_points <- function(p) {
   dist.ord <- order(p[,'dist'])
 
   id.unique <- -in.id[dist.ord][duplicated(p[dist.ord, 2:3])]
-  p[id.unique,,drop=FALSE]
+  if(!length(id.unique)) p else p[id.unique,,drop=FALSE]
 }
-points <- drop_hidden_points(points.dat)
+empty_rows <- function(arr) (rowSums(arr) == 3 * ncol(arr))
+empty_cols <- function(arr) (rowSums(colSums(arr)) == 3 * nrow(arr))
+
+render_elev <- function(
+  elevation, texture, rot, res.x=nrow(elevation), res.y=ncol(elevation)
+) {
+  mxl <- rbind(x=c(row(elevation)), y=c(col(elevation)), z=c(elevation))
+  mxlr <- t(rot %*% mxl)
+
+  # Account for perspective; this is not correct as we're doing it purely on the
+  # basis of how far from the observer we are along the y axis, instead of actual
+  # distance.
+
+  obs <- c(
+    diff(range(mxlr[,1])) / 2 + min(mxlr[,1]),
+    diff(range(mxlr[,2])) / 2 + min(mxlr[,2]),
+    diff(range(mxlr[,3])) + max(mxlr[,3])
+  )
+  dist.to.obs <- sqrt(colSums((t(mxlr) - obs)^2))
+
+  fovh <- 60 / 180 * pi
+  fovv <- 60 / 180 * pi
+
+  mxlrp <- mxlr
+  # mxlrp[,1] <- mxlrp[,1] / ((mxlrp[,2] - obs[,2]) * tan(fovh) / 2)
+  # mxlrp[,3] <- mxlrp[,3] / ((mxlrp[,2] - obs[,2]) * tan(fovv) / 2)
+
+  # ggplot(as.data.frame(mxlrp)) + geom_point(aes(V1, V2, color=c(sh2)))
+  # ggplot(as.data.frame(cbind(t(mxl[1:2,]), z=c(texture)))) + 
+  #   geom_point(aes(x, y, color=z))
+
+  # Add meta data, and rescale x,y values into 1:res.x and 1:res.y
+
+  mxres <- cbind(mxlrp, texture=c(texture), dist=dist.to.obs)
+  mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) *
+    (res.y - 1) + 1
+  mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
+    (res.x - 1) + 1
+
+  # Generate coordinates for triangular mesh from our points.
+
+  mesh <- triangular_mesh(mxres, nr=nrow(elevation), nc=ncol(elevation))
+  points.raw <- candidate_points(mesh)
+  points.t <- trim_points(points.raw, mesh)
+  points.dat <- points_meta(points.t, mesh)
+  points <- drop_hidden_points(points.dat)
+
+  # ggplot(as.data.frame(points.dat)) + 
+  # geom_point(aes(x=x.int, y=y.int, color=texture))
+
+  res.mx <- matrix(1, nrow=res.x, ncol=res.y)
+  res.mx[points[, c('x.int', 'y.int')]] <- points[, 'texture']
+
+  # transformations so renders okay in png
+
+  res.mx <- t(res.mx)
+  res.mx <- res.mx[rev(seq_len(nrow(res.mx))), ]
+  array(res.mx, c(dim(res.mx), 3L))
+}
+
+
+# eltif <- raster::raster("~/Downloads/dem_01.tif")
+# elmat1 <- matrix(
+#   raster::extract(eltif,raster::extent(eltif),buffer=10000),
+#   nrow=ncol(eltif),ncol=nrow(eltif)
+# )
+mx2 <- volcano
+# mx2 <- elmat1
+sun <- 135
+els <- seq(-90, 90, length=25)
+sh2 <- rayshader::ray_shade(mx2, els, sun, lambert=FALSE)
+sh2 <- sh2[, rev(seq_len(ncol(sh2)))]
+
+# Convert matrix to long format, and rotate
+
+left <- render_elev(mx2, sh2, rot_z(-45) %*% rot_x(1))
+png::writePNG(left, 'persp-left.png')
+
+right <- render_elev(mx2, sh2, rot_z(-45) %*% rot_x(-20))
+
+empty.rows <- which(empty_rows(left) & empty_rows(right))
+empty.cols <- which(empty_cols(left) & empty_cols(right))
+left <- left[-empty.rows, -empty.cols, ]
+right <- right[-empty.rows, -empty.cols, ]
+
+left[,,2:3] <- 0
+right[,,1] <- 0
+png::writePNG(left + right, 'persp-color.png')
+
 
 # mesh2 <- aperm(mesh, c(1, 3, 2))
 # mesh3 <- cbind(
@@ -245,7 +271,10 @@ points <- drop_hidden_points(points.dat)
 # Drop duplicates x-y values; we keep those closest to the observer; use
 # untransformed
 
+
+
 stop()
+library(ggplot2)
 ggplot(data=as.data.frame(points)) +
   geom_point(aes(x=x.int, y=y.int, group=NULL, color=shadow)) +
   scale_color_gradient(low='#333333', high='#ffffff', guide=FALSE)
