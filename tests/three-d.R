@@ -169,61 +169,69 @@ drop_hidden_points <- function(p) {
 empty_rows <- function(arr) (rowSums(arr) == 3 * ncol(arr))
 empty_cols <- function(arr) (rowSums(colSums(arr)) == 3 * nrow(arr))
 
-render_elev <- function(
-  elevation, texture, rot, res.x=nrow(elevation), res.y=ncol(elevation)
+#' @param pivot.y 1 or 0,0 will cause the parallax pivot to happen at
+#'   the closest y coordinate point, 1 at the furthest.
+
+project_elev <- function(
+  elevation, texture, rot, res.x=nrow(elevation), res.y=ncol(elevation),
+  pivot.angle=0
 ) {
   mxl <- rbind(x=c(row(elevation)), y=c(col(elevation)), z=c(elevation))
-  mxlr <- t(rot %*% mxl)
+  mxl[1,] <- mxl[1,] - max(mxl[1,])
+  mxl[2,] <- mxl[2,] - max(mxl[2,])
+  mxlr <- rot %*% mxl
+  res <- vector('list', length(pivot.angle))
 
-  # Account for perspective; this is not correct as we're doing it purely on the
-  # basis of how far from the observer we are along the y axis, instead of actual
-  # distance.
+  for(i in seq_along(pivot.angle)) {
+    # Account for perspective; this is not correct as we're doing it purely on
+    # the basis of how far from the observer we are along the y axis, instead of
+    # actual distance.
 
-  obs <- c(
-    diff(range(mxlr[,1])) / 2 + min(mxlr[,1]),
-    diff(range(mxlr[,2])) / 2 + min(mxlr[,2]),
-    diff(range(mxlr[,3])) + max(mxlr[,3])
-  )
-  dist.to.obs <- sqrt(colSums((t(mxlr) - obs)^2))
+    obs <- c(
+      diff(range(mxlr[1,])) / 2 + min(mxlr[1,]),
+      diff(range(mxlr[2,])) / 2 + min(mxlr[2,]),
+      diff(range(mxlr[3,])) + max(mxlr[3,])
+    )
+    dist.to.obs <- sqrt(colSums((mxlr - obs)^2))
 
-  fovh <- 60 / 180 * pi
-  fovv <- 60 / 180 * pi
+    mxlrp <- t(rot_z(pivot.angle[i]) %*% mxlr)
+    fovv <- 60 / 180 * pi
+    # mxlrp[,1] <- mxlrp[,1] / ((mxlrp[,2] - obs[,2]) * tan(fovh) / 2)
+    # mxlrp[,3] <- mxlrp[,3] / ((mxlrp[,2] - obs[,2]) * tan(fovv) / 2)
 
-  mxlrp <- mxlr
-  # mxlrp[,1] <- mxlrp[,1] / ((mxlrp[,2] - obs[,2]) * tan(fovh) / 2)
-  # mxlrp[,3] <- mxlrp[,3] / ((mxlrp[,2] - obs[,2]) * tan(fovv) / 2)
+    # ggplot(as.data.frame(mxlrp)) + geom_point(aes(V1, V2, color=c(sh2)))
+    # ggplot(as.data.frame(cbind(t(mxl[1:2,]), z=c(texture)))) + 
+    #   geom_point(aes(x, y, color=z))
 
-  # ggplot(as.data.frame(mxlrp)) + geom_point(aes(V1, V2, color=c(sh2)))
-  # ggplot(as.data.frame(cbind(t(mxl[1:2,]), z=c(texture)))) + 
-  #   geom_point(aes(x, y, color=z))
+    # Add meta data, and rescale x,y values into 1:res.x and 1:res.y
 
-  # Add meta data, and rescale x,y values into 1:res.x and 1:res.y
+    mxres <- cbind(mxlrp, texture=c(texture), dist=dist.to.obs)
+    mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) *
+      (res.y - 1) + 1
+    mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
+      (res.x - 1) + 1
 
-  mxres <- cbind(mxlrp, texture=c(texture), dist=dist.to.obs)
-  mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) *
-    (res.y - 1) + 1
-  mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
-    (res.x - 1) + 1
+    # Generate coordinates for triangular mesh from our points.
 
-  # Generate coordinates for triangular mesh from our points.
+    mesh <- triangular_mesh(mxres, nr=nrow(elevation), nc=ncol(elevation))
+    points.raw <- candidate_points(mesh)
+    points.t <- trim_points(points.raw, mesh)
+    points.dat <- points_meta(points.t, mesh)
+    points <- drop_hidden_points(points.dat)
 
-  mesh <- triangular_mesh(mxres, nr=nrow(elevation), nc=ncol(elevation))
-  points.raw <- candidate_points(mesh)
-  points.t <- trim_points(points.raw, mesh)
-  points.dat <- points_meta(points.t, mesh)
-  points <- drop_hidden_points(points.dat)
+    # ggplot(as.data.frame(points.dat)) + 
+    # geom_point(aes(x=x.int, y=y.int, color=texture))
 
-  # ggplot(as.data.frame(points.dat)) + 
-  # geom_point(aes(x=x.int, y=y.int, color=texture))
+    res.mx <- matrix(1, nrow=res.x, ncol=res.y)
+    res.mx[points[, c('x.int', 'y.int')]] <- points[, 'texture']
 
-  res.mx <- matrix(1, nrow=res.x, ncol=res.y)
-  res.mx[points[, c('x.int', 'y.int')]] <- points[, 'texture']
+    # transformations so renders okay in png
 
-  # transformations so renders okay in png
-
-  res.mx <- t(res.mx)
-  res.mx <- res.mx[rev(seq_len(nrow(res.mx))), ]
-  array(res.mx, c(dim(res.mx), 3L))
+    res.mx <- t(res.mx)
+    res.mx <- res.mx[rev(seq_len(nrow(res.mx))), ]
+    res[[i]] <- array(res.mx, c(dim(res.mx), 3L))
+  }
+  res
 }
 
 
@@ -241,10 +249,13 @@ sh2 <- sh2[, rev(seq_len(ncol(sh2)))]
 
 # Convert matrix to long format, and rotate
 
-left <- render_elev(mx2, sh2, rot_z(-45) %*% rot_x(1))
-png::writePNG(left, 'persp-left.png')
-
-right <- render_elev(mx2, sh2, rot_z(-45) %*% rot_x(-20))
+angle <- 3
+proj <- project_elev(
+  mx2, sh2, rot_x(-20) %*% rot_z(215 + angle), res.x=400, res.y=300,
+  pivot.angle=3 * c(1,-1), pivot.y=1
+)
+left <- proj[[1]]
+right <- proj[[2]]
 
 empty.rows <- which(empty_rows(left) & empty_rows(right))
 empty.cols <- which(empty_cols(left) & empty_cols(right))
@@ -254,6 +265,7 @@ right <- right[-empty.rows, -empty.cols, ]
 left[,,2:3] <- 0
 right[,,1] <- 0
 png::writePNG(left + right, 'persp-color.png')
+stop('done')
 
 
 # mesh2 <- aperm(mesh, c(1, 3, 2))
