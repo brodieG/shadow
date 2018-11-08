@@ -166,8 +166,8 @@ drop_hidden_points <- function(p) {
   id.unique <- -in.id[dist.ord][duplicated(p[dist.ord, 2:3])]
   if(!length(id.unique)) p else p[id.unique,,drop=FALSE]
 }
-empty_rows <- function(arr) (rowSums(arr) == 3 * ncol(arr))
-empty_cols <- function(arr) (rowSums(colSums(arr)) == 3 * nrow(arr))
+empty_rows <- function(arr) (rowSums(arr) == -3 * ncol(arr))
+empty_cols <- function(arr) (rowSums(colSums(arr)) == -3 * nrow(arr))
 
 #' @param pivot.y 1 or 0,0 will cause the parallax pivot to happen at
 #'   the closest y coordinate point, 1 at the furthest.
@@ -200,7 +200,7 @@ project_elev <- function(
     # mxlrp[,3] <- mxlrp[,3] / ((mxlrp[,2] - obs[,2]) * tan(fovv) / 2)
 
     # ggplot(as.data.frame(mxlrp)) + geom_point(aes(V1, V2, color=c(sh2)))
-    # ggplot(as.data.frame(cbind(t(mxl[1:2,]), z=c(texture)))) + 
+    # ggplot(as.data.frame(cbind(t(mxl[1:2,]), z=c(texture)))) +
     #   geom_point(aes(x, y, color=z))
 
     # Add meta data, and rescale x,y values into 1:res.x and 1:res.y
@@ -219,10 +219,10 @@ project_elev <- function(
     points.dat <- points_meta(points.t, mesh)
     points <- drop_hidden_points(points.dat)
 
-    # ggplot(as.data.frame(points.dat)) + 
+    # ggplot(as.data.frame(points.dat)) +
     # geom_point(aes(x=x.int, y=y.int, color=texture))
 
-    res.mx <- matrix(1, nrow=res.x, ncol=res.y)
+    res.mx <- matrix(-1, nrow=res.x, ncol=res.y)
     res.mx[points[, c('x.int', 'y.int')]] <- points[, 'texture']
 
     # transformations so renders okay in png
@@ -242,29 +242,66 @@ project_elev <- function(
 # )
 mx2 <- volcano
 # mx2 <- elmat1
-sun <- 135
+sun <- -45
 els <- seq(-90, 90, length=25)
 sh2 <- rayshader::ray_shade(mx2, els, sun, lambert=FALSE)
 sh2 <- sh2[, rev(seq_len(ncol(sh2)))]
+sh2 <- sh2 * .9 + .1
 
 # Convert matrix to long format, and rotate
 
-angle <- 3
-proj <- project_elev(
-  mx2, sh2, rot_x(-20) %*% rot_z(215 + angle), res.x=400, res.y=300,
-  pivot.angle=3 * c(1,-1), pivot.y=1
-)
+angle <- 3 * c(1,-1)
+rot <- rot_x(-20) %*% rot_z(215)
+rot <- rot_x(-30) %*% rot_z(45)
+#proj <- project_elev(mx2, sh2, rot, pivot.angle=angle)
+proj <- project_elev(mx2, sh2, rot, pivot.angle=angle, res.x=1200, res.y=1000)
+
 left <- proj[[1]]
 right <- proj[[2]]
 
 empty.rows <- which(empty_rows(left) & empty_rows(right))
 empty.cols <- which(empty_cols(left) & empty_cols(right))
 left <- left[-empty.rows, -empty.cols, ]
+png::writePNG(left, 'persp-left.png')
 right <- right[-empty.rows, -empty.cols, ]
 
+# determine what offset minimizes the mismatch of the max y values.
+
+offset <- 50
+desat <- .8
+left[cbind(which(left[,,1] > 0, arr.ind=TRUE), 1)] <-
+  left[cbind(which(left[,,1] > 0, arr.ind=TRUE), 1)] * desat
+
 left[,,2:3] <- 0
+# left[left < 0] <- 1
+# right[right < 0] <- 1
+right[
+  rbind(
+    cbind(which(right[,,2] > 0, arr.ind=TRUE), 2),
+    cbind(which(right[,,2] > 0, arr.ind=TRUE), 2)
+) ] <- right[
+  rbind(
+    cbind(which(right[,,2] > 0, arr.ind=TRUE), 2),
+    cbind(which(right[,,2] > 0, arr.ind=TRUE), 2)
+) ] * desat
+right[
+  rbind(
+    cbind(which(right[,,3] > 0, arr.ind=TRUE), 3),
+    cbind(which(right[,,3] > 0, arr.ind=TRUE), 3)
+) ] <- right[
+  rbind(
+    cbind(which(right[,,3] > 0, arr.ind=TRUE), 3),
+    cbind(which(right[,,3] > 0, arr.ind=TRUE), 3)
+) ] * desat
 right[,,1] <- 0
-png::writePNG(left + right, 'persp-color.png')
+
+res <- array(0, dim(left) + c(0, offset, 0))
+rows <- seq_len(nrow(left))
+cols <- seq_len(ncol(left))
+
+res[rows, cols, ] <- right
+res[rows, cols + offset, ] <- pmin(res[rows, cols + offset, ] + left, 1)
+png::writePNG(res, 'persp-color.png')
 stop('done')
 
 
