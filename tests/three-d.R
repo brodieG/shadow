@@ -169,47 +169,55 @@ drop_hidden_points <- function(p) {
 empty_rows <- function(arr) (rowSums(arr) == -3 * ncol(arr))
 empty_cols <- function(arr) (rowSums(colSums(arr)) == -3 * nrow(arr))
 
-#' @param pivot.y 1 or 0,0 will cause the parallax pivot to happen at
-#'   the closest y coordinate point, 1 at the furthest.
+#' @param resolution integer(2L) output resolution where the first value is the
+#'   x resolution, and the second the y resolution.
+#' @param parallax numeric vector of degrees to add to the z angle of
+#'   `rotation`.  A view will be rendered for each angle and returned in the
+#'   result list.  This makes it easy to generate stereoscopic images.
+#' @param dist numeric(1L) distance of the observer from the x-y plane as a
+#'   multiple of the z distance spanned by the elevation surface after rotation.
+#'   currently the observer is always centered on the x-y plane.
+#' @param fov numeric(1L) field of view in degrees.
 
 project_elev <- function(
-  elevation, texture, rot, res.x=nrow(elevation), res.y=ncol(elevation),
-  pivot.angle=0
+  elevation, texture, rotation, parallax=0, dist=2,
+  resolution=as.integer(dim(elevation) * 1.2)
 ) {
-  mxl <- rbind(x=c(row(elevation)), y=c(col(elevation)), z=c(elevation))
-  mxl[1,] <- mxl[1,] - max(mxl[1,])
-  mxl[2,] <- mxl[2,] - max(mxl[2,])
-  mxlr <- rot %*% mxl
-  res <- vector('list', length(pivot.angle))
+  mxl <- rbind(c(row(elevation)), c(col(elevation)), c(elevation))
+  ranges <- apply(mxl, 1, range)
+  obs <- c(
+    diff(ranges[,1])/2 + ranges[1,1],
+    diff(ranges[,2])/2 + ranges[1,2],
+    dist * diff(ranges[,3]) + ranges[2,3]
+  )
+  res <- vector('list', length(parallax))
 
-  for(i in seq_along(pivot.angle)) {
-    # Account for perspective; this is not correct as we're doing it purely on
-    # the basis of how far from the observer we are along the y axis, instead of
-    # actual distance.
-
-    obs <- c(
-      diff(range(mxlr[1,])) / 2 + min(mxlr[1,]),
-      diff(range(mxlr[2,])) / 2 + min(mxlr[2,]),
-      diff(range(mxlr[3,])) + max(mxlr[3,])
-    )
-    dist.to.obs <- sqrt(colSums((mxlr - obs)^2))
-
-    mxlrp <- t(rot_z(pivot.angle[i]) %*% mxlr)
-    fovv <- 60 / 180 * pi
-    # mxlrp[,1] <- mxlrp[,1] / ((mxlrp[,2] - obs[,2]) * tan(fovh) / 2)
+  for(i in seq_along(parallax)) {
+    mxlr <- rotation %*% rot_z(parallax[i]) %*% (mxl - obs)
+    # apply parallax rotation and compute observer position
+    dist.to.obs <- sqrt(colSums((mxlr)^2))
+    # compute projection
+    mxlrpa <- mxlr
+    mxlrpp <- mxlrpa
+    mxlrpp[1,] <- -1/mxlrpa[3,] * mxlrpa[1,]
+    mxlrpp[2,] <- -1/mxlrpa[3,] * mxlrpa[2,]
+    df <- as.data.frame(cbind(t(mxlrpp), color=c(sh2)))
+    print(ggplot(df[order(df$V3),]) + geom_point(aes(V1, V2, color=color)))
+    browser()
     # mxlrp[,3] <- mxlrp[,3] / ((mxlrp[,2] - obs[,2]) * tan(fovv) / 2)
 
-    # ggplot(as.data.frame(mxlrp)) + geom_point(aes(V1, V2, color=c(sh2)))
+    # ggplot(as.data.frame(t(mxlr))) + geom_point(aes(V1, V2, color=c(sh2)))
+    # ggplot(as.data.frame(t(mxlrpp))) + geom_point(aes(V1, V2, color=c(sh2)))
     # ggplot(as.data.frame(cbind(t(mxl[1:2,]), z=c(texture)))) +
     #   geom_point(aes(x, y, color=z))
 
     # Add meta data, and rescale x,y values into 1:res.x and 1:res.y
 
-    mxres <- cbind(mxlrp, texture=c(texture), dist=dist.to.obs)
+    mxres <- cbind(t(mxlrpp), texture=c(texture), dist=dist.to.obs)
     mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) *
-      (res.y - 1) + 1
+      (resolution[2] - 1) + 1
     mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
-      (res.x - 1) + 1
+      (resolution[1] - 1) + 1
 
     # Generate coordinates for triangular mesh from our points.
 
@@ -222,7 +230,7 @@ project_elev <- function(
     # ggplot(as.data.frame(points.dat)) +
     # geom_point(aes(x=x.int, y=y.int, color=texture))
 
-    res.mx <- matrix(-1, nrow=res.x, ncol=res.y)
+    res.mx <- matrix(-1, nrow=resolution[1], ncol=resolution[2])
     res.mx[points[, c('x.int', 'y.int')]] <- points[, 'texture']
 
     # transformations so renders okay in png
@@ -251,10 +259,11 @@ sh2 <- sh2 * .9 + .1
 # Convert matrix to long format, and rotate
 
 angle <- 3 * c(1,-1)
-rot <- rot_x(-20) %*% rot_z(215)
-rot <- rot_x(-30) %*% rot_z(45)
-#proj <- project_elev(mx2, sh2, rot, pivot.angle=angle)
-proj <- project_elev(mx2, sh2, rot, pivot.angle=angle, res.x=1200, res.y=1000)
+#rot <- rot_x(-20) %*% rot_z(215)
+rot <- rot_x(-45) %*% rot_z(45)
+#proj <- project_elev(mx2, sh2, rot, parallax=angle)
+stop()
+proj <- project_elev(mx2, sh2, rot, parallax=angle, resolution=c(1200,1000))
 
 left <- proj[[1]]
 right <- proj[[2]]
@@ -267,41 +276,55 @@ right <- right[-empty.rows, -empty.cols, ]
 
 # determine what offset minimizes the mismatch of the max y values.
 
-offset <- 50
-desat <- .8
-left[cbind(which(left[,,1] > 0, arr.ind=TRUE), 1)] <-
-  left[cbind(which(left[,,1] > 0, arr.ind=TRUE), 1)] * desat
+offset <- 0
+margin <- 10
 
-left[,,2:3] <- 0
-# left[left < 0] <- 1
-# right[right < 0] <- 1
-right[
-  rbind(
-    cbind(which(right[,,2] > 0, arr.ind=TRUE), 2),
-    cbind(which(right[,,2] > 0, arr.ind=TRUE), 2)
-) ] <- right[
-  rbind(
-    cbind(which(right[,,2] > 0, arr.ind=TRUE), 2),
-    cbind(which(right[,,2] > 0, arr.ind=TRUE), 2)
-) ] * desat
-right[
-  rbind(
-    cbind(which(right[,,3] > 0, arr.ind=TRUE), 3),
-    cbind(which(right[,,3] > 0, arr.ind=TRUE), 3)
-) ] <- right[
-  rbind(
-    cbind(which(right[,,3] > 0, arr.ind=TRUE), 3),
-    cbind(which(right[,,3] > 0, arr.ind=TRUE), 3)
-) ] * desat
+# right[right < 0] <- .8
 right[,,1] <- 0
+# left[left < 0] <- .8
+left[,,2:3] <- 0
 
-res <- array(0, dim(left) + c(0, offset, 0))
+# right[,,1] <- 0
+
+res <- array(0, dim(left) + c(margin*2, offset + margin*2, 0))
 rows <- seq_len(nrow(left))
 cols <- seq_len(ncol(left))
 
-res[rows, cols, ] <- right
-res[rows, cols + offset, ] <- pmin(res[rows, cols + offset, ] + left, 1)
+res[rows + margin, cols + margin, ] <- right
+res[rows + margin, cols + offset + margin, ] <-
+  pmin(res[rows + margin, cols + offset + margin, ] + left, 1)
 png::writePNG(res, 'persp-color.png')
+
+# side by side
+
+proj <- project_elev(mx2, sh2, rot, parallax=angle, res.x=400, res.y=350)
+left <- proj[[1]]
+right <- proj[[2]]
+
+empty.rows <- which(empty_rows(left) & empty_rows(right))
+empty.cols <- which(empty_cols(left) & empty_cols(right))
+
+# drop extra channels
+
+left <- left[-empty.rows, -empty.cols, 1]
+right <- right[-empty.rows, -empty.cols, 1]
+
+no.overlap <- rowSums(left[, rev(seq_len(ncol(left))),], dims=2) == -3 |
+  rowSums(right, dims=2) == -3
+no.over.rle <- rle(colSums(no.overlap) == nrow(no.overlap))
+overlap.size <- if(isTRUE(no.over.rle[['values']][1]))
+  no.over.rle[['lengths']][1] else 0L
+
+# combine and write png
+
+combined <- array(0, dim=dim(left) * c(1,2,1) - c(0, overlap.size, 0))
+combined[,seq_len(ncol(left)),] <- left
+combined[,tail(seq_len(ncol(combined)), ncol(right)),] <-
+  combined[,tail(seq_len(ncol(combined)), ncol(right)),] + right
+
+png::writePNG(combined, 'persp.png')
+
+
 stop('done')
 
 
