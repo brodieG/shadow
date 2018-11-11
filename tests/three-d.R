@@ -119,7 +119,7 @@ trim_points <- function(points, mesh) {
 
   # compute angles between the triangle vertices: a . b = |a||b| cos(p)
 
-  sqrRsq <- function(x) sqrt(rowSums(x^2))
+  sqrRsq <- function(x) sqrt(rowSums(x*x))
   v1 <- vecs[,,1]
   v2 <- vecs[,,2]
   v3 <- vecs[,,3]
@@ -242,7 +242,8 @@ project_elev <- function(
     points.raw <- candidate_points(mesh)
     points.t <- trim_points(points.raw, mesh)
     points.dat <- points_meta(points.t, mesh)
-    points <- drop_hidden_points(points.dat)
+    # resolve duplicates by putting nearest points last
+    points <- points.dat[order(points.dat[,'dist'], decreasing=TRUE),]
 
     # ggplot(as.data.frame(points.dat)) +
     # geom_point(aes(x=x.int, y=y.int, color=texture))
