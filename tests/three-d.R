@@ -23,7 +23,7 @@ rot_z <- function(deg) {
   )
 }
 triangular_mesh <- function(dat, nr, nc) {
-  stopifnot(identical(dim(dat)[2], 5L), nr * nc == nrow(dat))
+  stopifnot(identical(dim(dat)[2], 4L), nr * nc == nrow(dat))
 
   # create a tile mesh by combining four copies of our original matrix,
   # dropping first/last row/col in turn.  The arithmetic is to map location
@@ -50,13 +50,14 @@ triangular_mesh <- function(dat, nr, nc) {
   mesh <- array(0, c(nrow(tile.mesh)*2,ncol(tile.mesh),3))
   mesh[seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,1:3]
   mesh[-seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,2:4]
+  dimnames(mesh) <- list(NULL, c('x', 'y', 'z', 'texture'))
   mesh
 }
 # For each triangle in the mesh, determine which points in the integer grid
 # could potentially be in the mesh
 
 candidate_points <- function(mesh) {
-  stopifnot(identical(dim(mesh)[2:3], c(5L,3L)))
+  stopifnot(identical(dim(mesh)[2:3], c(4L,3L)))
 
   # assume all points between max and min on y/x could be in mesh
   points.int <- cbind(
@@ -102,15 +103,15 @@ candidate_points <- function(mesh) {
 
   cbind(
     id=seq.id,
-    x.int=seq.x + points.int[seq.id, 'xmin'],
-    y.int=seq.y + points.int[seq.id, 'ymin']
+    x=seq.x + points.int[seq.id, 'xmin'],
+    y=seq.y + points.int[seq.id, 'ymin']
   )
 }
 #
 # Remove all points that are not actually within their mesh triangle
 
 trim_points <- function(points, mesh) {
-  stopifnot(ncol(points) == 3, identical(dim(mesh)[-1], c(5L,3L)))
+  stopifnot(ncol(points) == 3, identical(dim(mesh)[-1], c(4L,3L)))
 
   # For each point, compute the vectors from that point to each of the vertices
   # of the mesh triangle we are checking it is in
@@ -137,6 +138,38 @@ trim_points <- function(points, mesh) {
 
   points[(mesh.ang.1 + mesh.ang.2 + mesh.ang.3 >= 2 * pi - 1e-6),]
 }
+#' Compute Barycentric Coordinates
+#'
+#' Taken from [wikipedia](https://en.wikipedia.org/wiki/Barycentric_coordinate_system#Conversion_between_barycentric_and_Cartesian_coordinates).
+#'
+#' @param p numeric matrix with two columns 'x' and 'y': the points to compute
+#'   the barycentric coordinates for.
+#' @param v numeric array with dim(n,2,3) where the columns are 'x' and 'y', and
+#'   the 3rd dimension represents each vertex of the triangle.
+
+barycentric_coord <- function(p, v) {
+  x1 <- v[,'x',1]
+  x2 <- v[,'x',2]
+  x3 <- v[,'x',3]
+  y1 <- v[,'y',1]
+  y2 <- v[,'y',2]
+  y3 <- v[,'y',3]
+  x <- p[,'x']
+  y <- p[,'y']
+
+  y2.y3 <- y2 - y3
+  x3.x2 <- x3 - x2
+  x1.x3 <- x1 - x3
+  x.x3 <- x - x3
+  y.y3 <- y - y3
+  det <- y2.y3 * x1.x3 + x3.x2 * (y1 - y3)
+
+  l1 <- (y2.y3 * x.x3 + x3.x2 * y.y3) / det
+  l2 <- ((y3 - y1) * x.x3 + x1.x3 * y.y3) / det
+  l3 <- 1 - l1 - l2
+
+  cbind(l1, l2, l3)
+}
 # Compute meta data for each point
 #
 # We need the shadow value, as well as the distance from observer.  We will do
@@ -144,30 +177,13 @@ trim_points <- function(points, mesh) {
 # this information.
 
 points_meta <- function(p, m) {
-  m.dist <- sqrt(
-    rowSums(
-      aperm(
-        (m[p[,'id'],1:2,] - array(p[,2:3],c(nrow(p),2,3))) ^ 2,
-        c(1, 3, 2)
-      ),
-      dims=2
-  ) )
-  p.texture <- rowSums(m[p[,'id'], 4,] * (1/m.dist)) / rowSums(1/m.dist)
-  p.dist <- rowSums(m[p[,'id'], 5,] * (1/m.dist)) / rowSums(1/m.dist)
-  cbind(p, texture=p.texture, dist=p.dist)
-}
-# Drop points hidden by others
-#
-# We use distance from observer, and keep only closest points for any given
-# x,y coordinate.  Basically, we order all points by distance, and then drop any
-# duplicated x,y coordinates so that we just keep the first of each.
+  # compute barycentric coordinates for each point relative to the vertices
 
-drop_hidden_points <- function(p) {
-  in.id <- seq_len(nrow(p))
-  dist.ord <- order(p[,'dist'])
-
-  id.unique <- -in.id[dist.ord][duplicated(p[dist.ord, 2:3])]
-  if(!length(id.unique)) p else p[id.unique,,drop=FALSE]
+  m.dat <- m[p[, 'id'], c('x', 'y', 'z', 'texture'),]
+  bary <- barycentric_coord(p[, c('x', 'y')], m.dat)
+  p.texture <- rowSums(bary * m.dat[,'texture',])
+  p.z <- rowSums(bary * m.dat[,'z',])
+  cbind(p, z=p.z, texture=p.texture)
 }
 empty_rows <- function(arr) (rowSums(arr) == -3 * ncol(arr))
 empty_cols <- function(arr) (rowSums(colSums(arr)) == -3 * nrow(arr))
@@ -198,13 +214,16 @@ project_elev <- function(
       dist * diff(ranges[,3]) + ranges[2,3]
     )
     mxlro <- mxlr - obs
-    dist.to.obs <- sqrt(colSums((mxlr)^2))
+    dimnames(mxlro)[[1]] <- c('x', 'y', 'z')
+
     # apply parallax rotation and compute observer position
     # compute projection
+
     mxlrpp <- mxlro
-    mxlrpp[1,] <- -1/mxlro[3,] * mxlro[1,]
-    mxlrpp[2,] <- -1/mxlro[3,] * mxlro[2,]
-    df <- as.data.frame(cbind(t(mxlrpp), color=c(sh2)))
+    mxlrpp['x',] <- -1/mxlro['z',] * mxlro['x',]
+    mxlrpp['y',] <- -1/mxlro['z',] * mxlro['y',]
+
+    # df <- as.data.frame(cbind(t(mxlrpp), color=c(sh2)))
     # print(ggplot(df[order(df$V3),]) + geom_point(aes(V1, V2, color=color)))
     # print(ggplot(df[order(df$V3),]) + geom_point(aes(V1, V2, color=V3)))
     # mxlrp[,3] <- mxlrp[,3] / ((mxlrp[,2] - obs[,2]) * tan(fovv) / 2)
@@ -216,10 +235,10 @@ project_elev <- function(
 
     # Add meta data, and rescale x,y values into 1:res.x and 1:res.y
 
-    mxres <- cbind(t(mxlrpp), texture=c(texture), dist=-mxlrpp[3,])
-    mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) *
+    mxres <- cbind(t(mxlrpp), texture=c(texture))
+    mxres[,'y'] <- (mxres[,'y'] - min(mxres[,'y'])) / diff(range(mxres[,'y'])) *
       (resolution[2] - 1) + 1
-    mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
+    mxres[,'x'] <- (mxres[,'x'] - min(mxres[,'x'])) / diff(range(mxres[,'x'])) *
       (resolution[1] - 1) + 1
 
     # print(ggplot(as.data.frame(mxres)) + geom_point(aes(V1, V2, color=texture)))
@@ -227,6 +246,7 @@ project_elev <- function(
     # Generate coordinates for triangular mesh from our points.
 
     mesh <- triangular_mesh(mxres, nr=nrow(elevation), nc=ncol(elevation))
+
     # mesh2 <- aperm(mesh, c(1, 3, 2))
     # mesh3 <- cbind(
     #   rep(seq_len(nrow(mesh2)), each=ncol(mesh2)),
@@ -243,13 +263,13 @@ project_elev <- function(
     points.t <- trim_points(points.raw, mesh)
     points.dat <- points_meta(points.t, mesh)
     # resolve duplicates by putting nearest points last
-    points <- points.dat[order(points.dat[,'dist'], decreasing=TRUE),]
+    points <- points.dat[order(points.dat[,'z']),]
 
     # ggplot(as.data.frame(points.dat)) +
     # geom_point(aes(x=x.int, y=y.int, color=texture))
 
     res.mx <- matrix(-1, nrow=resolution[1], ncol=resolution[2])
-    res.mx[points[, c('x.int', 'y.int')]] <- points[, 'texture']
+    res.mx[points[, c('x', 'y')]] <- points[, 'texture']
 
     # transformations so renders okay in png
 
