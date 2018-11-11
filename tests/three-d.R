@@ -278,7 +278,7 @@ rot <- rot_x(-20) %*% rot_z(45)
 #proj <- project_elev(mx2, sh2, rot, parallax=angle)
 stop()
 proj <- project_elev(
-  mx2, sh2, rot, parallax=angle, dist=2, resolution=c(400*1.4, 400)
+  mx2, sh2, rot, parallax=angle, dist=.5, resolution=c(400*1.4, 400)
 )
 left <- proj[[1]]
 right <- proj[[2]]
@@ -312,7 +312,7 @@ png::writePNG(res, 'persp-color.png')
 
 # side by side
 
-proj <- project_elev(mx2, sh2, rot, parallax=angle, res.x=400, res.y=350)
+proj <- project_elev(mx2, sh2, rot, parallax=angle, dist=.5, res=c(400,350))
 left <- proj[[1]]
 right <- proj[[2]]
 
@@ -324,19 +324,24 @@ empty.cols <- which(empty_cols(left) & empty_cols(right))
 left <- left[-empty.rows, -empty.cols, 1]
 right <- right[-empty.rows, -empty.cols, 1]
 
-no.overlap <- rowSums(left[, rev(seq_len(ncol(left))),], dims=2) == -3 |
-  rowSums(right, dims=2) == -3
+no.overlap <- left[, rev(seq_len(ncol(left)))] == -3 | right == -3
 no.over.rle <- rle(colSums(no.overlap) == nrow(no.overlap))
 overlap.size <- if(isTRUE(no.over.rle[['values']][1]))
   no.over.rle[['lengths']][1] else 0L
 
 # combine and write png
 
-combined <- array(0, dim=dim(left) * c(1,2,1) - c(0, overlap.size, 0))
-combined[,seq_len(ncol(left)),] <- left
-combined[,tail(seq_len(ncol(combined)), ncol(right)),] <-
-  combined[,tail(seq_len(ncol(combined)), ncol(right)),] + right
+combined <- array(0, dim=dim(left) * c(1,2) - c(0, overlap.size))
+combined[,seq_len(ncol(left))] <- left
+combined[,tail(seq_len(ncol(combined)), ncol(right))] <-
+  combined[,tail(seq_len(ncol(combined)), ncol(right))] + right
 
+margin <- c(100, 20)
+combined.fin <- array(0, did(combined) + c(margin.tb, margin.lr))
+combined.fin[
+  seq_len(nrow(combined)) + margin[1],
+  seq_len(ncol(combined)) + margin[2]
+] <- combined
 png::writePNG(combined, 'persp.png')
 
 
