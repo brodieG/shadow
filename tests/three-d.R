@@ -184,26 +184,26 @@ project_elev <- function(
   resolution=as.integer(dim(elevation) * 1.2)
 ) {
   mxl <- rbind(c(row(elevation)), c(col(elevation)), c(elevation))
-  ranges <- apply(mxl, 1, range)
-  obs <- c(
-    diff(ranges[,1])/2 + ranges[1,1],
-    diff(ranges[,2])/2 + ranges[1,2],
-    dist * diff(ranges[,3]) + ranges[2,3]
-  )
   res <- vector('list', length(parallax))
 
   for(i in seq_along(parallax)) {
-    mxlr <- rotation %*% rot_z(parallax[i]) %*% (mxl - obs)
-    # apply parallax rotation and compute observer position
+    mxlr <- rotation %*% rot_z(parallax[i]) %*% (mxl)
+    ranges <- apply(mxlr, 1, range)
+    obs <- c(
+      diff(ranges[,1])/2 + ranges[1,1],
+      diff(ranges[,2])/2 + ranges[1,2],
+      dist * diff(ranges[,3]) + ranges[2,3]
+    )
+    mxlro <- mxlr - obs
     dist.to.obs <- sqrt(colSums((mxlr)^2))
+    # apply parallax rotation and compute observer position
     # compute projection
-    mxlrpa <- mxlr
-    mxlrpp <- mxlrpa
-    mxlrpp[1,] <- -1/mxlrpa[3,] * mxlrpa[1,]
-    mxlrpp[2,] <- -1/mxlrpa[3,] * mxlrpa[2,]
+    mxlrpp <- mxlro
+    mxlrpp[1,] <- -1/mxlro[3,] * mxlro[1,]
+    mxlrpp[2,] <- -1/mxlro[3,] * mxlro[2,]
     df <- as.data.frame(cbind(t(mxlrpp), color=c(sh2)))
-    print(ggplot(df[order(df$V3),]) + geom_point(aes(V1, V2, color=color)))
-    browser()
+    # print(ggplot(df[order(df$V3),]) + geom_point(aes(V1, V2, color=color)))
+    # print(ggplot(df[order(df$V3),]) + geom_point(aes(V1, V2, color=V3)))
     # mxlrp[,3] <- mxlrp[,3] / ((mxlrp[,2] - obs[,2]) * tan(fovv) / 2)
 
     # ggplot(as.data.frame(t(mxlr))) + geom_point(aes(V1, V2, color=c(sh2)))
@@ -213,15 +213,29 @@ project_elev <- function(
 
     # Add meta data, and rescale x,y values into 1:res.x and 1:res.y
 
-    mxres <- cbind(t(mxlrpp), texture=c(texture), dist=dist.to.obs)
+    mxres <- cbind(t(mxlrpp), texture=c(texture), dist=-mxlrpp[3,])
     mxres[,2] <- (mxres[,2] - min(mxres[,2])) / diff(range(mxres[,2])) *
       (resolution[2] - 1) + 1
     mxres[,1] <- (mxres[,1] - min(mxres[,1])) / diff(range(mxres[,1])) *
       (resolution[1] - 1) + 1
 
+    # print(ggplot(as.data.frame(mxres)) + geom_point(aes(V1, V2, color=texture)))
+
     # Generate coordinates for triangular mesh from our points.
 
     mesh <- triangular_mesh(mxres, nr=nrow(elevation), nc=ncol(elevation))
+    # mesh2 <- aperm(mesh, c(1, 3, 2))
+    # mesh3 <- cbind(
+    #   rep(seq_len(nrow(mesh2)), each=ncol(mesh2)),
+    #   c(t(mesh2[,,1])), c(t(mesh2[,,2])), c(t(mesh2[,,5]))
+    # )
+    # meshdf <- as.data.frame(mesh3)
+    # meshdf$z <- ave(meshdf$V3, meshdf$V1, FUN=mean)
+    # Need to reorder points in the mesh
+
+    # ggplot(meshdf[order(meshdf$z),], aes(V2, V3, group=V1)) +
+    #  geom_polygon(color='grey', size=.2)
+
     points.raw <- candidate_points(mesh)
     points.t <- trim_points(points.raw, mesh)
     points.dat <- points_meta(points.t, mesh)
@@ -260,11 +274,12 @@ sh2 <- sh2 * .9 + .1
 
 angle <- 3 * c(1,-1)
 #rot <- rot_x(-20) %*% rot_z(215)
-rot <- rot_x(-45) %*% rot_z(45)
+rot <- rot_x(-20) %*% rot_z(45)
 #proj <- project_elev(mx2, sh2, rot, parallax=angle)
 stop()
-proj <- project_elev(mx2, sh2, rot, parallax=angle, resolution=c(1200,1000))
-
+proj <- project_elev(
+  mx2, sh2, rot, parallax=angle, dist=2, resolution=c(400*1.4, 400)
+)
 left <- proj[[1]]
 right <- proj[[2]]
 
