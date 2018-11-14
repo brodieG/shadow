@@ -143,7 +143,7 @@ barycentric_coord <- function(x, x1, x2, x3, y, y1, y2, y3) {
   l2 <- ((y3 - y1) * x.x3 + x1.x3 * y.y3) / det
   l3 <- 1 - l1 - l2
 
-  cbind(l1, l2, l3)
+  list(l1, l2, l3)
 }
 #' Compute Texture of Each Pixels
 #'
@@ -159,7 +159,7 @@ barycentric_coord <- function(x, x1, x2, x3, y, y1, y2, y3) {
 
 points_texture <- function(p, m) {
   # expand mesh data to line up with our points
-  M <- lapply(m, function(x) x[p[['id']]])
+  M <- lapply(m, '[', p[['id']])
   dim(M) <- dim(m)
   dimnames(M) <- dimnames(m)
 
@@ -167,16 +167,16 @@ points_texture <- function(p, m) {
   bary <- do.call(barycentric_coord, c(p['x'], M[,'x'], p['y'], M[,'y']))
 
   # drop pixes outside of mesh triangles.
-  inbounds <- rowSums(bary >= 0) != 3L
-  bary.in <- bary[inbounds,]
+  inbounds <- bary[[1]] >= 0 & bary[[2]] >= 0 & bary[[3]] >= 0
+  bary.in <- lapply(bary, '[', inbounds)
   M.in <- lapply(M[,c('t', 'z')], '[', inbounds)
   p.in <- lapply(p, '[', inbounds)
   dim(M.in) <- c(3L, 2L)
   dimnames(M.in) <- list(NULL, c('t', 'z'))
 
   # compute point texture and z vals
-  p.t <- rowSums(bary.in * do.call(cbind, M.in[,'t']))
-  p.z <- rowSums(bary.in * do.call(cbind, M.in[,'z']))
+  p.t <- Reduce('+', Map('*', bary.in, M.in[,'t']))
+  p.z <- Reduce('+', Map('*', bary.in, M.in[,'z']))
   c(p.in, list(z=p.z, t=p.t))
 }
 empty_rows <- function(arr) (rowSums(arr) == -3 * ncol(arr))
