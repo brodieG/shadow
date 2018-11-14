@@ -120,13 +120,16 @@ trim_points <- function(points, mesh) {
   # compute angles between the triangle vertices: a . b = |a||b| cos(p)
 
   sqrRsq <- function(x) sqrt(rowSums(x^2))
+  v1 <- vecs[,,1]
+  v2 <- vecs[,,2]
+  v3 <- vecs[,,3]
+  v1s <- sqrRsq(v1)
+  v2s <- sqrRsq(v2)
+  v3s <- sqrRsq(v3)
 
-  mesh.ang.1 <-
-    acos(rowSums(vecs[,,1]*vecs[,,2]) / (sqrRsq(vecs[,,1])*sqrRsq(vecs[,,2])))
-  mesh.ang.2 <-
-    acos(rowSums(vecs[,,2]*vecs[,,3]) / (sqrRsq(vecs[,,2])*sqrRsq(vecs[,,3])))
-  mesh.ang.3 <-
-    acos(rowSums(vecs[,,3]*vecs[,,1]) / (sqrRsq(vecs[,,3])*sqrRsq(vecs[,,1])))
+  mesh.ang.1 <- acos(rowSums(v1*v2) / (v1s*v2s))
+  mesh.ang.2 <- acos(rowSums(v2*v3) / (v2s*v3s))
+  mesh.ang.3 <- acos(rowSums(v3*v1) / (v3s*v1s))
 
   # points that are within their triangles will have a sum of angles equal to
   # 2pi Need to be a little more generous for precision pruposes, could lead to
@@ -230,11 +233,11 @@ project_elev <- function(
     #   c(t(mesh2[,,1])), c(t(mesh2[,,2])), c(t(mesh2[,,5]))
     # )
     # meshdf <- as.data.frame(mesh3)
-    # meshdf$z <- ave(meshdf$V3, meshdf$V1, FUN=mean)
-    # Need to reorder points in the mesh
-
-    # ggplot(meshdf[order(meshdf$z),], aes(V2, V3, group=V1)) +
-    #  geom_polygon(color='grey', size=.2)
+    # meshdf$z <- ave(meshdf$V4, meshdf$V1, FUN=mean)
+    # meshdf$id <- rep(seq_len(nrow(meshdf)/3), each=3)
+    # meshdf$id <- factor(meshdf$id, levels=sort(unique(meshdf$id), dec=T))
+    # ggplot(meshdf, aes(V2, V3, group=id)) +
+    #  geom_polygon(color='grey', size=.05)
 
     points.raw <- candidate_points(mesh)
     points.t <- trim_points(points.raw, mesh)
@@ -274,11 +277,16 @@ sh2 <- sh2 * .9 + .1
 
 angle <- 3 * c(1,-1)
 #rot <- rot_x(-20) %*% rot_z(215)
-rot <- rot_x(-20) %*% rot_z(45)
+rot <- rot_x(-20) %*% rot_z(65)
 #proj <- project_elev(mx2, sh2, rot, parallax=angle)
 stop()
+treeprof(
 proj <- project_elev(
-  mx2, sh2, rot, parallax=angle, dist=.5, resolution=c(400*1.4, 400)
+  mx2, sh2, rot, parallax=angle, dist=.5, resolution=c(800,800)
+)
+)
+system.time(
+proj <- project_elev(mx2, sh2, rot, parallax=0, dist=.5, resolution=c(800,800))
 )
 left <- proj[[1]]
 right <- proj[[2]]
@@ -337,12 +345,12 @@ combined[,tail(seq_len(ncol(combined)), ncol(right))] <-
   combined[,tail(seq_len(ncol(combined)), ncol(right))] + right
 
 margin <- c(100, 20)
-combined.fin <- array(0, did(combined) + c(margin.tb, margin.lr))
+combined.fin <- array(0, dim(combined) + margin * 2)
 combined.fin[
   seq_len(nrow(combined)) + margin[1],
   seq_len(ncol(combined)) + margin[2]
 ] <- combined
-png::writePNG(combined, 'persp.png')
+png::writePNG(combined.fin, 'persp.png')
 
 
 stop('done')
