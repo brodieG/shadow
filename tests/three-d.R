@@ -50,40 +50,46 @@ triangular_mesh <- function(dat, nr, nc) {
   mesh <- array(0, c(nrow(tile.mesh)*2,ncol(tile.mesh),3))
   mesh[seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,1:3]
   mesh[-seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,2:4]
-  dimnames(mesh) <- list(NULL, c('x', 'y', 'z', 'texture'))
-  mesh
+  dimnames(mesh) <- list(NULL, c('x', 'y', 'z', 'texture'), NULL)
+
+  # convert to a list of dfs
+
+  list(
+    as.data.frame(mesh[,,1]), as.data.frame(mesh[,,2]), as.data.frame(mesh[,,3])
+  )
 }
 # For each triangle in the mesh, determine which points in the integer grid
 # could potentially be in the mesh
 
 candidate_points <- function(mesh) {
-  stopifnot(identical(dim(mesh)[2:3], c(4L,3L)))
-
   # assume all points between max and min on y/x could be in mesh
-  points.int <- cbind(
-    id=seq_len(nrow(mesh)),
-    xmin=pmin(mesh[,1L,1L], mesh[,1L,2L], mesh[,1L,3L]),
-    xmax=pmax(mesh[,1L,1L], mesh[,1L,2L], mesh[,1L,3L]),
-    ymin=pmin(mesh[,2L,1L], mesh[,2L,2L], mesh[,2L,3L]),
-    ymax=pmax(mesh[,2L,1L], mesh[,2L,2L], mesh[,2L,3L])
+  points.int <- data.frame(
+    id=seq_len(nrow(mesh[[1]])),
+    xmin=pmin(mesh[[1]][['x']], mesh[[2L]][['x']], mesh[[3L]][['x']]),
+    xmax=pmax(mesh[[1]][['x']], mesh[[2L]][['x']], mesh[[3L]][['x']]),
+    ymin=pmin(mesh[[1]][['y']], mesh[[2L]][['y']], mesh[[3L]][['y']]),
+    ymax=pmax(mesh[[1]][['y']], mesh[[2L]][['y']], mesh[[3L]][['y']])
   )
   # don't allow the maxs to be exactly at the boundary
 
-  xmax.bad <- points.int[,'xmax'] == floor(points.int[,'xmax'])
-  points.int[xmax.bad, 'xmax'] <- points.int[xmax.bad, 'xmax'] -
-    (points.int[xmax.bad, 'xmax'] - points.int[xmax.bad, 'xmin']) * .01
-  ymax.bad <- points.int[,'ymax'] == floor(points.int[,'ymax'])
-  points.int[ymax.bad, 'ymax'] <- points.int[ymax.bad, 'ymax'] -
-    (points.int[ymax.bad, 'ymax'] - points.int[ymax.bad, 'ymin']) * .01
-
-  points.int[, c('xmin', 'ymin')] <- ceiling(points.int[, c('xmin', 'ymin')])
-  points.int[, c('xmax', 'ymax')] <- floor(points.int[, c('xmax', 'ymax')])
+  xmax.bad <- points.int[['xmax']] == floor(points.int[['xmax']])
+  points.int[xmax.bad,] <- within(
+    points.int[xmax.bad,], xmax <- xmax - (xmax  - xmin) * .01
+  )
+  ymax.bad <- points.int[['ymax']] == floor(points.int[['ymax']])
+  points.int[ymax.bad,] <- within(
+    points.int[ymax.bad,], ymax <- ymax - (ymax  - ymin) * .01
+  )
+  points.int[, c('xmin', 'ymin')] <-
+    lapply(points.int[, c('xmin', 'ymin')], ceiling)
+  points.int[, c('xmax', 'ymax')] <-
+    lapply(points.int[, c('xmax', 'ymax')], floor)
 
   # for each triangle, generate the set of integer coordinates that it could
   # contain.
 
-  p.int.len.x <- pmax(points.int[, 'xmax'] - points.int[, 'xmin'] + 1, 0)
-  p.int.len.y <- pmax(points.int[, 'ymax'] - points.int[, 'ymin'] + 1, 0)
+  p.int.len.x <- pmax(points.int[['xmax']] - points.int[['xmin']] + 1, 0)
+  p.int.len.y <- pmax(points.int[['ymax']] - points.int[['ymin']] + 1, 0)
   p.int.len <- p.int.len.x * p.int.len.y
 
   # For each id, need the equivalent of `expand.grid` of the xmin:xmax and
@@ -91,7 +97,7 @@ candidate_points <- function(mesh) {
   # 1:(xmax-xmin) and 1:(ymax-ymin); we add back xmin and xmax later.  Contorted
   # logic is to minimize calls to R functions as this is bottleneck.
 
-  seq.id <- rep(points.int[, 'id'], p.int.len)
+  seq.id <- rep(points.int[['id']], p.int.len)
   seq.x <- rep(sequence(p.int.len.x), rep(p.int.len.y, p.int.len.x)) - 1L
   seq.x.delta <- which(c(FALSE, diff(seq.x) != 0L | diff(seq.id) != 0L))
 
@@ -101,7 +107,7 @@ candidate_points <- function(mesh) {
 
   # add back xmin and xmax
 
-  cbind(
+  data.frame(
     id=seq.id,
     x=seq.x + points.int[seq.id, 'xmin'],
     y=seq.y + points.int[seq.id, 'ymin']
@@ -148,15 +154,15 @@ trim_points <- function(points, mesh) {
 #'   the 3rd dimension represents each vertex of the triangle.
 
 barycentric_coord <- function(p, v) {
-  x1 <- v[,'x',1]
-  x2 <- v[,'x',2]
-  x3 <- v[,'x',3]
-  y1 <- v[,'y',1]
-  y2 <- v[,'y',2]
-  y3 <- v[,'y',3]
-  x <- p[,'x']
-  y <- p[,'y']
-
+  x1 <- v[[1L]][['x']]
+  x2 <- v[[2L]][['x']]
+  x3 <- v[[3L]][['x']]
+  y1 <- v[[1L]][['y']]
+  y2 <- v[[2L]][['y']]
+  y3 <- v[[3L]][['y']]
+  barycentric_internal(p[['x']], x1, x2, x3, p[['y']], y1, y2, y3)
+}
+barycentric_internal <- function(x, x1, x2, x3, y, y1, y2, y3) {
   y2.y3 <- y2 - y3
   x3.x2 <- x3 - x2
   x1.x3 <- x1 - x3
@@ -170,20 +176,34 @@ barycentric_coord <- function(p, v) {
 
   cbind(l1, l2, l3)
 }
-# Compute meta data for each point
-#
-# We need the shadow value, as well as the distance from observer.  We will do
-# the distance weighted average of the mesh triangle vertex values which contain
-# this information.
+#' Compute Texture of Each Pixels
+#'
+#' Use barycentric coordinates to compute the vertex weighted texture of each
+#' pixel within each mesh triangle.  We also compute the z value of each pixel
+#' in the same manner.  Finally, we eliminate any pixels not in the mesh
+#' triangle.
+#'
+#' @param p numeric matrix with 'x' and 'y' coords, and an 'id' of what mesh
+#'   triangle the point corresponds to in theory.
+#' @param m numeric array with 'x', 'y', 'z', and 'texture' values for each
+#'   vertex.
 
-points_meta <- function(p, m) {
-  # compute barycentric coordinates for each point relative to the vertices
-
-  m.dat <- m[p[, 'id'], c('x', 'y', 'z', 'texture'),]
-  bary <- barycentric_coord(p[, c('x', 'y')], m.dat)
-  p.texture <- rowSums(bary * m.dat[,'texture',])
-  p.z <- rowSums(bary * m.dat[,'z',])
-  cbind(p, z=p.z, texture=p.texture)
+points_texture <- function(p, m) {
+  # expand mesh data to line up with our points
+  m.dat <- lapply(m, function(x) x[p[['id']],])
+  # compute barycentric weighted texture and z values
+  bary <- barycentric_coord(p, m.dat)
+  p.texture <- rowSums(
+    bary * cbind(
+      m.dat[[1]][['texture']],m.dat[[2]][['texture']],m.dat[[3]][['texture']]
+  ) )
+  p.z <- rowSums(
+    bary * cbind(
+      m.dat[[1]][['z']],m.dat[[2]][['z']],m.dat[[3]][['z']]
+  ) )
+  p.fin <- data.frame(p, z=p.z, texture=p.texture)
+  # drop pixes outside of mesh triangles.
+  p.fin[rowSums(bary >= 0) == 3L,]
 }
 empty_rows <- function(arr) (rowSums(arr) == -3 * ncol(arr))
 empty_cols <- function(arr) (rowSums(colSums(arr)) == -3 * nrow(arr))
@@ -260,8 +280,7 @@ project_elev <- function(
     #  geom_polygon(color='grey', size=.05)
 
     points.raw <- candidate_points(mesh)
-    points.t <- trim_points(points.raw, mesh)
-    points.dat <- points_meta(points.t, mesh)
+    points.dat <- points_texture(points.raw, mesh)
     # resolve duplicates by putting nearest points last
     points <- points.dat[order(points.dat[,'z']),]
 
@@ -269,7 +288,7 @@ project_elev <- function(
     # geom_point(aes(x=x.int, y=y.int, color=texture))
 
     res.mx <- matrix(-1, nrow=resolution[1], ncol=resolution[2])
-    res.mx[points[, c('x', 'y')]] <- points[, 'texture']
+    res.mx[as.matrix(points[, c('x', 'y')])] <- points[['texture']]
 
     # transformations so renders okay in png
 
