@@ -50,40 +50,45 @@ triangular_mesh <- function(dat, nr, nc) {
   mesh <- array(0, c(nrow(tile.mesh)*2,ncol(tile.mesh),3))
   mesh[seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,1:3]
   mesh[-seq_len(nrow(tile.mesh)),,] <- tile.mesh[,,2:4]
-  dimnames(mesh) <- list(NULL, c('x', 'y', 'z', 'texture'), NULL)
+  dimnames(mesh) <- list(NULL, c('x', 'y', 'z', 't'), NULL)
 
-  # convert to a list of dfs
+  # convert to a list matrix, where the rows index the vertices and the columns
+  # the data.  We do this because we will be subsetting by columns a lot
 
-  list(
-    as.data.frame(mesh[,,1]), as.data.frame(mesh[,,2]), as.data.frame(mesh[,,3])
+  mesh.list.dim <- rev(dim(mesh)[-1])
+  list.ids <- do.call(expand.grid, lapply(mesh.list.dim, seq_len))
+  mesh.list <- Map(
+    function(vertex, col) mesh[,col,vertex,drop=TRUE],
+    list.ids[[1]], list.ids[[2]]
   )
+  dim(mesh.list) <- mesh.list.dim
+  dimnames(mesh.list) <- rev(dimnames(mesh)[-1])
+  mesh.list
 }
 # For each triangle in the mesh, determine which points in the integer grid
 # could potentially be in the mesh
 
 candidate_points <- function(mesh) {
   # assume all points between max and min on y/x could be in mesh
-  points.int <- data.frame(
-    id=seq_len(nrow(mesh[[1]])),
-    xmin=pmin(mesh[[1]][['x']], mesh[[2L]][['x']], mesh[[3L]][['x']]),
-    xmax=pmax(mesh[[1]][['x']], mesh[[2L]][['x']], mesh[[3L]][['x']]),
-    ymin=pmin(mesh[[1]][['y']], mesh[[2L]][['y']], mesh[[3L]][['y']]),
-    ymax=pmax(mesh[[1]][['y']], mesh[[2L]][['y']], mesh[[3L]][['y']])
+  points.int <- list(
+    id=seq_along(mesh[[1,'x']]),
+    xmin=do.call(pmin, mesh[,'x']), xmax=do.call(pmax, mesh[,'x']),
+    ymin=do.call(pmin, mesh[,'y']), ymax=do.call(pmax, mesh[,'y'])
   )
   # don't allow the maxs to be exactly at the boundary
 
   xmax.bad <- points.int[['xmax']] == floor(points.int[['xmax']])
-  points.int[xmax.bad,] <- within(
-    points.int[xmax.bad,], xmax <- xmax - (xmax  - xmin) * .01
+  points.int[['xmax']][xmax.bad] <- with(
+    lapply(points.int, '[', xmax.bad), xmax - (xmax  - xmin) * .01
   )
   ymax.bad <- points.int[['ymax']] == floor(points.int[['ymax']])
-  points.int[ymax.bad,] <- within(
-    points.int[ymax.bad,], ymax <- ymax - (ymax  - ymin) * .01
+  points.int[['ymax']][ymax.bad] <- with(
+    lapply(points.int, '[', ymax.bad), ymax - (ymax  - ymin) * .01
   )
-  points.int[, c('xmin', 'ymin')] <-
-    lapply(points.int[, c('xmin', 'ymin')], ceiling)
-  points.int[, c('xmax', 'ymax')] <-
-    lapply(points.int[, c('xmax', 'ymax')], floor)
+  xymin <- c('xmin', 'ymin')
+  xymax <- c('xmax', 'ymax')
+  points.int[xymin] <- lapply(points.int[xymin], ceiling)
+  points.int[xymax] <- lapply(points.int[xymax], floor)
 
   # for each triangle, generate the set of integer coordinates that it could
   # contain.
@@ -107,62 +112,26 @@ candidate_points <- function(mesh) {
 
   # add back xmin and xmax
 
-  data.frame(
+  list(
     id=seq.id,
-    x=seq.x + points.int[seq.id, 'xmin'],
-    y=seq.y + points.int[seq.id, 'ymin']
+    x=seq.x + points.int[['xmin']][seq.id],
+    y=seq.y + points.int[['ymin']][seq.id]
   )
-}
-#
-# Remove all points that are not actually within their mesh triangle
-
-trim_points <- function(points, mesh) {
-  stopifnot(ncol(points) == 3, identical(dim(mesh)[-1], c(4L,3L)))
-
-  # For each point, compute the vectors from that point to each of the vertices
-  # of the mesh triangle we are checking it is in
-
-  vecs <- mesh[points[,'id'],1:2,] - array(points[,2:3], c(nrow(points),2,3))
-
-  # compute angles between the triangle vertices: a . b = |a||b| cos(p)
-
-  sqrRsq <- function(x) sqrt(rowSums(x*x))
-  v1 <- vecs[,,1]
-  v2 <- vecs[,,2]
-  v3 <- vecs[,,3]
-  v1s <- sqrRsq(v1)
-  v2s <- sqrRsq(v2)
-  v3s <- sqrRsq(v3)
-
-  mesh.ang.1 <- acos(rowSums(v1*v2) / (v1s*v2s))
-  mesh.ang.2 <- acos(rowSums(v2*v3) / (v2s*v3s))
-  mesh.ang.3 <- acos(rowSums(v3*v1) / (v3s*v1s))
-
-  # points that are within their triangles will have a sum of angles equal to
-  # 2pi Need to be a little more generous for precision pruposes, could lead to
-  # incorrect determinations in very corner cases
-
-  points[(mesh.ang.1 + mesh.ang.2 + mesh.ang.3 >= 2 * pi - 1e-6),]
 }
 #' Compute Barycentric Coordinates
 #'
 #' Taken from [wikipedia](https://en.wikipedia.org/wiki/Barycentric_coordinate_system#Conversion_between_barycentric_and_Cartesian_coordinates).
 #'
-#' @param p numeric matrix with two columns 'x' and 'y': the points to compute
+#' @note all the input vectors are expected to be of the same length.
+#' @param x,y, numeric vectors with cartesian coordinates of the points to
+#'   compute barycentric coordinates for.
+#' @param x1, x2, x3, y1, y2, y3, numeric vectors of the cartesian
+#'   coordinates of the vertices of the triangles.
+#'   to matrix with two columns 'x' and 'y':
+#'   the points to compute
 #'   the barycentric coordinates for.
-#' @param v numeric array with dim(n,2,3) where the columns are 'x' and 'y', and
-#'   the 3rd dimension represents each vertex of the triangle.
 
-barycentric_coord <- function(p, v) {
-  x1 <- v[[1L]][['x']]
-  x2 <- v[[2L]][['x']]
-  x3 <- v[[3L]][['x']]
-  y1 <- v[[1L]][['y']]
-  y2 <- v[[2L]][['y']]
-  y3 <- v[[3L]][['y']]
-  barycentric_internal(p[['x']], x1, x2, x3, p[['y']], y1, y2, y3)
-}
-barycentric_internal <- function(x, x1, x2, x3, y, y1, y2, y3) {
+barycentric_coord <- function(x, x1, x2, x3, y, y1, y2, y3) {
   y2.y3 <- y2 - y3
   x3.x2 <- x3 - x2
   x1.x3 <- x1 - x3
@@ -185,25 +154,30 @@ barycentric_internal <- function(x, x1, x2, x3, y, y1, y2, y3) {
 #'
 #' @param p numeric matrix with 'x' and 'y' coords, and an 'id' of what mesh
 #'   triangle the point corresponds to in theory.
-#' @param m numeric array with 'x', 'y', 'z', and 'texture' values for each
+#' @param m numeric array with 'x', 'y', 'z', and 't' values for each
 #'   vertex.
 
 points_texture <- function(p, m) {
   # expand mesh data to line up with our points
-  m.dat <- lapply(m, function(x) x[p[['id']],])
+  M <- lapply(m, function(x) x[p[['id']]])
+  dim(M) <- dim(m)
+  dimnames(M) <- dimnames(m)
+
   # compute barycentric weighted texture and z values
-  bary <- barycentric_coord(p, m.dat)
-  p.texture <- rowSums(
-    bary * cbind(
-      m.dat[[1]][['texture']],m.dat[[2]][['texture']],m.dat[[3]][['texture']]
-  ) )
-  p.z <- rowSums(
-    bary * cbind(
-      m.dat[[1]][['z']],m.dat[[2]][['z']],m.dat[[3]][['z']]
-  ) )
-  p.fin <- data.frame(p, z=p.z, texture=p.texture)
+  bary <- do.call(barycentric_coord, c(p['x'], M[,'x'], p['y'], M[,'y']))
+
   # drop pixes outside of mesh triangles.
-  p.fin[rowSums(bary >= 0) == 3L,]
+  inbounds <- rowSums(bary >= 0) != 3L
+  bary.in <- bary[inbounds,]
+  M.in <- lapply(M[,c('t', 'z')], '[', inbounds)
+  p.in <- lapply(p, '[', inbounds)
+  dim(M.in) <- c(3L, 2L)
+  dimnames(M.in) <- list(NULL, c('t', 'z'))
+
+  # compute point texture and z vals
+  p.t <- rowSums(bary.in * do.call(cbind, M.in[,'t']))
+  p.z <- rowSums(bary.in * do.call(cbind, M.in[,'z']))
+  c(p.in, list(z=p.z, t=p.t))
 }
 empty_rows <- function(arr) (rowSums(arr) == -3 * ncol(arr))
 empty_cols <- function(arr) (rowSums(colSums(arr)) == -3 * nrow(arr))
@@ -282,13 +256,14 @@ project_elev <- function(
     points.raw <- candidate_points(mesh)
     points.dat <- points_texture(points.raw, mesh)
     # resolve duplicates by putting nearest points last
-    points <- points.dat[order(points.dat[,'z']),]
+    points.ord <- order(points.dat[['z']])
+    points <- lapply(points.dat, '[', points.ord)
 
     # ggplot(as.data.frame(points.dat)) +
     # geom_point(aes(x=x.int, y=y.int, color=texture))
 
     res.mx <- matrix(-1, nrow=resolution[1], ncol=resolution[2])
-    res.mx[as.matrix(points[, c('x', 'y')])] <- points[['texture']]
+    res.mx[do.call(cbind, points[c('x', 'y')])] <- points[['t']]
 
     # transformations so renders okay in png
 
@@ -321,6 +296,7 @@ rot <- rot_x(-20) %*% rot_z(65)
 #proj <- project_elev(mx2, sh2, rot, parallax=angle)
 stop()
 treeprof(
+# system.time(
 proj <- project_elev(
   mx2, sh2, rot, parallax=angle, dist=.5, resolution=c(800,800)
 )
