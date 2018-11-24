@@ -7,9 +7,12 @@
 # )
 mx2 <- volcano
 # mx2 <- elmat1
-sun <- 135
 els <- seq(-90, 90, length=25)
+sun <- 180
 sh2 <- ray_shade2(mx2, els, sun)
+# sun <- 0
+# sh2 <- rayshader::ray_shade(mx2, els, sun, lambert=FALSE)
+# sh2 <- sh2[, rev(seq_len(ncol(sh2)))]
 sh2 <- sh2 * .9 + .1
 
 # Convert matrix to long format, and rotate
@@ -25,11 +28,21 @@ proj <- project_elev(
 left <- proj[[1]]
 right <- proj[[2]]
 
+
 empty.rows <- which(empty_rows(left) & empty_rows(right))
 empty.cols <- which(empty_cols(left) & empty_cols(right))
 left <- left[-empty.rows, -empty.cols, ]
 png::writePNG(left, 'persp-left.png')
 right <- right[-empty.rows, -empty.cols, ]
+
+#
+
+left.r <- left[,,1]
+left.r[left.r < 0] <- 0
+left2 <- left
+left2[left2 < 0] <- 0
+str(as.raster(left.r))
+plot(as.raster(left2))
 
 # determine what offset minimizes the mismatch of the max y values.
 
@@ -50,6 +63,7 @@ cols <- seq_len(ncol(left))
 res[rows + margin, cols + margin, ] <- right
 res[rows + margin, cols + offset + margin, ] <-
   pmin(res[rows + margin, cols + offset + margin, ] + left, 1)
+res[res < 0] <- 0
 png::writePNG(res, 'persp-color.png')
 
 # side by side
