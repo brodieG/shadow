@@ -5,6 +5,7 @@
 #   raster::extract(eltif,raster::extent(eltif),buffer=10000),
 #   nrow=ncol(eltif),ncol=nrow(eltif)
 # )
+library(shadow)
 mx2 <- volcano
 # mx2 <- elmat1
 els <- seq(-90, 90, length=25)
@@ -64,6 +65,12 @@ res[rows + margin, cols + margin, ] <- right
 res[rows + margin, cols + offset + margin, ] <-
   pmin(res[rows + margin, cols + offset + margin, ] + left, 1)
 res[res < 0] <- 0
+png('persp-color-2.png', width=ncol(res), height=nrow(res))
+par(mai=c(.25,.25,.25,.25))
+par(bg='black')
+plot(as.raster(res))
+dev.off()
+
 png::writePNG(res, 'persp-color.png')
 
 # side by side
