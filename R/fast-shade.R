@@ -109,13 +109,15 @@ faster_bilinear2 <- function(Z, x, y) {
   YT <- y - j
 
   # Expand matrix to handle OOB cases; algorithm as written uses zero
-  # (implicitly), and so do we, but might be better to just use last row and
-  # column values instead.  We have not tested whether the additional allocation
-  # for the matrix is slower than trying to explicitly compute each of the
-  # special cases.
+  # (implicitly), instead we use last row and col values
 
-  Z2 <- matrix(0, nrow=nrow(Z) + 1L, ncol=ncol(Z) + 1L)
-  Z2[-nrow(Z2), -ncol(Z2)] <- Z
+  nr2 <- nrow(Z) + 1L
+  nc2 <- ncol(Z) + 1L
+  Z2 <- matrix(0, nrow=nr2, ncol=nc2)
+  Z2[-nr2, -nc2] <- Z
+  Z2[nr2, -nc2] <- Z[nrow(Z),]
+  Z2[-nr2, nc2] <- Z[,ncol(Z)]
+  Z2[nr2, nc2] <- Z[nrow(Z),ncol(Z)]
 
   # Create symbols for re-used vectors
 

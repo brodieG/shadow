@@ -297,7 +297,9 @@ project_elev <- function(
     res.mx <- matrix(-1, nrow=resolution[1], ncol=resolution[2])
     res.mx[do.call(cbind, points[c('x', 'y')])] <- points[['t']]
 
-    # transformations so renders okay in png
+    # transformations so renders okay as raster / png as those plot the matrix
+    # in the same way it displays in the terminal (rows vertically which and in
+    # increasing index value), as opposed to in traditional x y plot like RGL
 
     res.mx <- t(res.mx)
     res.mx <- res.mx[rev(seq_len(nrow(res.mx))), ]
