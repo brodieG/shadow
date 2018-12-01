@@ -38,6 +38,8 @@ rot_z <- function(deg) {
 #'   y, z, and texture values of the elevation map.
 #' @param nr number of rows in original elevation matrix
 #' @param nc number of columns in original elevation matrix
+#' @return 3 x 5 list matrix where rows index the vertex, and the columns
+#'   represent the x, y, z, and texture values.
 
 triangular_mesh <- function(dat, nr, nc) {
   stopifnot(identical(dim(dat)[2], 4L), nr * nc == nrow(dat))
@@ -299,7 +301,7 @@ project_elev <- function(
 
     # transformations so renders okay as raster / png as those plot the matrix
     # in the same way it displays in the terminal (rows vertically which and in
-    # increasing index value), as opposed to in traditional x y plot like RGL
+    # increasing index value), as opposed to in traditional x y plot like RGL.
 
     res.mx <- t(res.mx)
     res.mx <- res.mx[rev(seq_len(nrow(res.mx))), ]
