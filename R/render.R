@@ -127,8 +127,10 @@ candidate_points <- function(mesh) {
   # logic is to minimize calls to R functions as this is bottleneck.
 
   seq.id <- rep(points.int[['id']], p.int.len)
-  seq.x <- rep(sequence(p.int.len.x), rep(p.int.len.y, p.int.len.x)) - 1L
-  seq.x.delta <- which(c(FALSE, diff(seq.x) != 0L | diff(seq.id) != 0L))
+  y.lens <- rep(p.int.len.y, p.int.len.x)
+
+  seq.x <- rep(sequence(p.int.len.x), y.lens) - 1L
+  seq.x.delta <- cumsum(y.lens[-length(y.lens)]) + 1L
 
   seq.y <- integer(length(seq.x))
   seq.y[seq.x.delta] <- seq.x.delta - 1L
