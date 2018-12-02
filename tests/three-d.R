@@ -6,8 +6,8 @@
 #   nrow=ncol(eltif),ncol=nrow(eltif)
 # )
 library(shadow)
-mx2 <- volcano
-# mx2 <- elmat1
+# mx2 <- volcano
+mx2 <- elmat1
 els <- seq(-90, 90, length=25)
 sun <- 180
 sh2 <- ray_shade2(mx2, els, sun)
@@ -25,6 +25,9 @@ rot <- rot_x(-20) %*% rot_z(65)
 # system.time(
 proj <- project_elev(
   mx2, sh2, rot, parallax=angle, dist=.5, resolution=c(800,800)
+)
+proj <- project_elev(
+  mx2, sh2, diag(3), parallax=0, dist=1e6, resolution=c(800,800)
 )
 left <- proj[[1]]
 right <- proj[[2]]

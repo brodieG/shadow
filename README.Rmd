@@ -1,14 +1,24 @@
 # Shadow
 
-## Overview
+## Disclaimer
 
 This is a demo package that illustrates it is possible to write reasonably fast
-ray-shading code in pure R.  It will not be published to CRAN.
+ray-shading and 3D rendering code in pure R.  It will not be published to CRAN
+and we have not checked whether it complies with CRAN policies or not.  The
+functions included do not check their parameters and have only been lightly
+tested.
 
-This package implements:
+## Rayshading
+
+This package implements the ray shading functions:
 
 * `shadow::ray_shade1`: the original for-loop based pure R shader.
 * `shadow::ray_shade2`: a vectorized pure R shader
+* `shadow::ray_shade3`: Like `ray_shade2`, but without bilinear interpolation
+
+These all derive from [Tyler Morgan Wall's `rayshader`][1].  The only thing we
+did is re-implement them with vectorized semantics.  `ray_shade1` is actually
+taken from [Wolf Vollprecht's Next Journal article][2].
 
 ```{r}
 elmat <- readRDS('extra/elmat.RDS') # http://tylermw.com/data/dem_01.tif.zip
@@ -24,6 +34,11 @@ ggplot(shade.df, aes(x=Var1, y=Var2, fill=z)) +
   scale_y_continuous(expand=c(0,0)) +
   theme(axis.text=element_text(size=6))
 ```
+
+## 3D Rendering
+
+
+
 
 ## Installation
 
@@ -42,11 +57,11 @@ unlink(c(f.dl, f.uz))
 
 ## Related Items
 
-* Tyler Morgan Wall's [rayshader
-  package](https://github.com/tylermorganwall/rayshader) and [blog
-  post](http://www.tylermw.com/throwing-shade/)
-* [Wolf Vollprecht's Next Journal
-  article](https://nextjournal.com/wolfv/how-fast-is-r-with-fastr-pythran)
-* My [blog post](https://www.brodieg.com/2018/10/23/do-not-shade-r/) on the
-  topic.
+* Tyler Morgan Wall's [rayshader package][1] and [blog post][3]
+* [Wolf Vollprecht's Next Journal article][2]
+* My [blog post][4] on the topic.
 
+[1]: https://github.com/tylermorganwall/rayshader
+[2]: https://nextjournal.com/wolfv/how-fast-is-r-with-fastr-pythran
+[3]: http://www.tylermw.com/throwing-shade/
+[4]: https://www.brodieg.com/2018/10/23/do-not-shade-r/
