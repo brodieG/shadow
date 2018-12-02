@@ -71,3 +71,32 @@ mesh_tri <- function(L, dim) {
   dimnames(mesh.tri) <- list(head(rownames(mesh.tile), -1), colnames(mesh.tile))
   mesh.tri
 }
+#' Compute Barycentric Coordinates
+#'
+#' @export
+#' @param p a list containing equal length numeric vectors containing the
+#'   coordinates of the points that we want to compute barycentric coordinates
+#'   for.
+#' @param v numeric list-matrix where each row corresponds to a triangle vertex
+#'   data and each column the x and y coordinates for each vertex.  Each element
+#'   of the underlying vectors is matched position wise to the corresponding
+#'   point in `p`, so all vectors in `p` and `v` are expected to be the same
+#'   length.
+#' @return a list with there numeric vectors containing the barycentric
+#'   coordinates.
+
+barycentric <- function(p, v) {
+  det <-  (v[[2,'y']]-v[[3,'y']])*(v[[1,'x']]-v[[3,'x']]) +
+          (v[[3,'x']]-v[[2,'x']])*(v[[1,'y']]-v[[3,'y']])
+
+  l1 <- (
+          (v[[2,'y']]-v[[3,'y']])*(  p[['x']]-v[[3,'x']]) +
+          (v[[3,'x']]-v[[2,'x']])*(  p[['y']]-v[[3,'y']])
+        ) / det
+  l2 <- (
+          (v[[3,'y']]-v[[1,'y']])*(  p[['x']]-v[[3,'x']]) +
+          (v[[1,'x']]-v[[3,'x']])*(  p[['y']]-v[[3,'y']])
+        ) / det
+  l3 <- 1 - l1 - l2
+  list(l1, l2, l3)
+}
