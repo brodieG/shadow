@@ -165,7 +165,7 @@ mesh_expand <- function(mesh, ids) {
 }
 shade <- function(texture, bc) Reduce('+', Map('*', texture, bc))
 
-rasterize <- function(mesh, width) {
+rasterize <- function(mesh, resolution) {
   bb <- bounding_boxes(mesh)
   p.cand <- candidate_pixels(bb)
   mesh.all <- mesh_expand(mesh, p.cand[['id']])
@@ -176,9 +176,34 @@ rasterize <- function(mesh, width) {
     shade(lapply(mesh.all[,'t'], '[', inbounds), lapply(bc, '[', inbounds))
 
   p.in <- lapply(p.cand[c('x','y')], '[', inbounds)
-  p.raster <- matrix(numeric(0), width[1], width[2])
+  p.raster <- matrix(numeric(0), resolution[1], resolution[2])
   p.raster[do.call(cbind, unname(p.in))] <- texture
   p.raster
+}
+
+project_and_scale <- function(elevation, texture, rotation, resolution, d) {
+  el.long <- to_long(elevation)
+  r <- rotate(el.long, rotation)
+  rl <- mx_as_list(r, texture)
+  rlp <- perspective(rl, d)
+
+  x.rng <- range(rlp[['x']])
+  y.rng <- range(rlp[['y']])
+  asp <- diff(x.rng) / diff(y.rng)
+  y.res <- round((resolution - 1) * asp) + 1L
+
+  rlp[['x']] <- (rlp[['x']] - x.rng[1]) / diff(x.rng) * (resolution - 1) + 1
+  rlp[['y']] <- (rlp[['y']] - y.rng[1]) / diff(y.rng) * y.res
+  attr(rlp, 'resolution') <- as.integer(c(x=resolution, y=y.res))
+  rlp
+}
+#' Convert Elevation Map as Triangle Polygon Mesh
+#'
+#' @export
+
+elevation_as_mesh <- function(elevation, texture, rotation, resolution, d) {
+  rlp <- project_and_scale(elevation, texture, rotation, resolution, d)
+  mesh_tri(rlp, dim(elevation), order=TRUE)
 }
 
 #' Render a 3D Elevation as a 2D Image
@@ -196,22 +221,10 @@ rasterize <- function(mesh, width) {
 #'   as a multiple of the total depth of the model along the observation axis.
 #' @export
 
-render <- function(elevation, texture, rotation, resolution, d) {
+render_elevation <- function(elevation, texture, rotation, resolution, d) {
   stopifnot(identical(dim(elevation), dim(texture)))
-
-  el.long <- to_long(elevation)
-  r <- rotate(el.long, rotation)
-  rl <- mx_as_list(r, texture)
-  rlp <- perspective(rl, d)
-
-  x.rng <- range(rlp[['x']])
-  y.rng <- range(rlp[['y']])
-  asp <- diff(x.rng) / diff(y.rng)
-
-  rlp[['x']] <- (rlp[['x']] - x.rng[1]) / diff(x.rng) * (resolution - 1) + 1
-  rlp[['y']] <- (rlp[['y']] - y.rng[1]) / diff(y.rng) *
-    round((resolution - 1) * asp) + 1
-
+  resolution <- as.integer(resolution)
+  rlp <- project_and_scale(elevation, texture, rotation, resolution, d)
   mesh <- mesh_tri(rlp, dim(elevation), order=TRUE)
-  rasterize(mesh, c(x=resolution, y=resolution*asp))
+  rasterize(mesh, attr(rlp, 'resolution'))
 }
