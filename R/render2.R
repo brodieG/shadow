@@ -168,7 +168,7 @@ mesh_expand <- function(mesh, ids) {
 }
 shade <- function(texture, bc) Reduce('+', Map('*', texture, bc))
 
-rasterize <- function(mesh, resolution, zord) {
+rasterize <- function(mesh, resolution, zord, empty) {
   bb <- bounding_boxes(mesh)
   p.cand <- candidate_pixels(bb)
   mesh.all <- mesh_expand(mesh, p.cand[['id']])
@@ -184,7 +184,7 @@ rasterize <- function(mesh, resolution, zord) {
     texture <- texture[zord]
   }
 
-  p.raster <- matrix(numeric(0), resolution[1], resolution[2])
+  p.raster <- matrix(empty, resolution[1], resolution[2])
   p.raster[do.call(cbind, unname(p.in))] <- texture
   p.raster
 }
@@ -230,7 +230,7 @@ elevation_as_mesh <- function(elevation, texture, rotation, d) {
 #' @export
 
 render_elevation <- function(
-  elevation, texture, rotation, resolution, d, zord='mesh'
+  elevation, texture, rotation, resolution, d=1, zord='mesh', empty=0
 ) {
   stopifnot(
     identical(dim(elevation), dim(texture)),
@@ -241,5 +241,5 @@ render_elevation <- function(
   # really, we should z order the pixels, but that means we need to run the
   # expensive
   mesh <- mesh_tri(rlp, dim(elevation), order=zord == 'mesh')
-  rasterize(mesh, attr(rlp, 'resolution'), zord)
+  rasterize(mesh, attr(rlp, 'resolution'), zord, empty)
 }
