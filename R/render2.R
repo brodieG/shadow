@@ -64,11 +64,17 @@ mesh_tile <- function(L, dim) {
 #' @export
 #' @rdname mesh
 
-mesh_tri <- function(L, dim) {
+mesh_tri <- function(L, dim, order=FALSE) {
   mesh.tile <- mesh_tile(L, dim)
   mesh.tri <- Map('c', mesh.tile[1:3,], mesh.tile[c(3,4,1),])
   dim(mesh.tri) <- c(3, ncol(mesh.tile))
   dimnames(mesh.tri) <- list(head(rownames(mesh.tile), -1), colnames(mesh.tile))
+
+  if(order) {
+    zord <- order(Reduce('+', mesh.tri[,'z']))
+    mesh.tri[['z']] <- NULL   # don't need z val anymore
+    mesh.tri[] <- lapply(mesh.tri, '[', zord)
+  }
   mesh.tri
 }
 #' Compute Barycentric Coordinates
@@ -99,4 +105,113 @@ barycentric <- function(p, v) {
         ) / det
   l3 <- 1 - l1 - l2
   list(l1, l2, l3)
+}
+
+to_long <- function(x) rbind(x=c(row(x)), y=c(col(x)), z=c(x))
+rotate <- function(x, rot) rot %*% x
+mx_as_list <- function(x, texture)
+  c(
+    setNames(lapply(seq_len(nrow(x)), function(i) x[i,]), c('x','y','z')),
+    t=list(c(texture))
+  )
+
+perspective <- function(x, d) {
+  z.rng <- range(x[['z']])
+  ZD <- diff(z.rng)
+
+  ## Normalize XY coordinates so observer is centered in midpoint of x-y extent
+  ## and at Z=0
+  xp <- x
+  xp[c('x','y')] <- lapply(x[c('x','y')], function(x) x - sum(range(x)) / 2)
+  xp[['z']] <- xp[['z']] - (z.rng[2] + d * ZD)
+
+  ## Apply perspective transformation
+  z.factor <- -1 / xp[['z']]
+  xp[c('x','y')] <- lapply(xp[c('x','y')], '*', z.factor)
+  xp
+}
+bounding_boxes <- function(mesh) {
+  mins <- apply(
+    mesh[,c('x','y')], 2,
+    function(x) list(as.integer(ceiling(do.call(pmin, x))))
+  )
+  maxs <- apply(
+    mesh[,c('x','y')], 2,
+    function(x) list(as.integer(do.call(pmax, x)))
+  )
+  list(mins=lapply(mins, '[[', 1L), maxs=lapply(maxs, '[[', 1L))
+}
+candidate_pixels <- function(bb) {
+  mins <- bb[['mins']]
+  maxs <- bb[['maxs']]
+  dims.x <- pmax(maxs[['x']] - mins[['x']] + 1, 0)
+  dims.y <- pmax(maxs[['y']] - mins[['y']] + 1, 0)
+  dims.xy <- dims.x * dims.y
+  dims.xy <- dims.x * dims.y
+  bb.id <- rep(seq_along(dims.x), dims.xy)
+  x.lens <- rep(dims.x, dims.y)
+  x.off <- sequence2(x.lens) - 1L
+  y.off <- rep(sequence2(dims.y), x.lens) - 1L
+
+  ## Add back the min values of the bounding boxes
+  p.x <- x.off + mins[['x']][bb.id]
+  p.y <- y.off + mins[['y']][bb.id]
+  list(id=bb.id, x=p.x, y=p.y)
+}
+mesh_expand <- function(mesh, ids) {
+  mesh.all <- mesh
+  mesh.all[] <- lapply(mesh, '[', ids)
+  mesh.all
+}
+shade <- function(texture, bc) Reduce('+', Map('*', texture, bc))
+
+rasterize <- function(mesh, width) {
+  bb <- bounding_boxes(mesh)
+  p.cand <- candidate_pixels(bb)
+  mesh.all <- mesh_expand(mesh, p.cand[['id']])
+  bc <- barycentric(p.cand, mesh.all)
+  inbounds <- Reduce('&', lapply(bc, '>=', 0))
+
+  texture <-
+    shade(lapply(mesh.all[,'t'], '[', inbounds), lapply(bc, '[', inbounds))
+
+  p.in <- lapply(p.cand[c('x','y')], '[', inbounds)
+  p.raster <- matrix(numeric(0), width[1], width[2])
+  p.raster[do.call(cbind, unname(p.in))] <- texture
+  p.raster
+}
+
+#' Render a 3D Elevation as a 2D Image
+#'
+#' @param elevation numeric matrix of elevations; each matrix element is assumed
+#'   to be equally spaced in both X and Y dimensions.
+#' @param texture a numeric matrix with values in [0,1] of the same dimensions
+#'   as `elevation`, where 1 means light and 0 means dark.  Currently only
+#'   grayscale textures are supported.
+#' @param 3 x 3 numeric rotation matrix.
+#' @param resolution integer(1L) the width of the output in pixels assuming
+#'   there is no rotation.  Actual width will depend on whether rotation causes
+#'   the width to change.
+#' @param d numeric(1L) distance of the observer from nearest part of the model
+#'   as a multiple of the total depth of the model along the observation axis.
+#' @export
+
+render <- function(elevation, texture, rotation, resolution, d) {
+  stopifnot(identical(dim(elevation), dim(texture)))
+
+  el.long <- to_long(elevation)
+  r <- rotate(el.long, rotation)
+  rl <- mx_as_list(r, texture)
+  rlp <- perspective(rl, d)
+
+  x.rng <- range(rlp[['x']])
+  y.rng <- range(rlp[['y']])
+  asp <- diff(x.rng) / diff(y.rng)
+
+  rlp[['x']] <- (rlp[['x']] - x.rng[1]) / diff(x.rng) * (resolution - 1) + 1
+  rlp[['y']] <- (rlp[['y']] - y.rng[1]) / diff(y.rng) *
+    round((resolution - 1) * asp) + 1
+
+  mesh <- mesh_tri(rlp, dim(elevation), order=TRUE)
+  rasterize(mesh, c(x=resolution, y=resolution*asp))
 }

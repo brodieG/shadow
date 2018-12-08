@@ -28,6 +28,20 @@ rot_z <- function(deg) {
          0,       0,       1)
   )
 }
+#' Internally Vectorized Version of sequence
+#'
+#' Should be substantially faster for large `nvec`.
+#'
+#' @inheritParams base::sequence
+#' @export
+
+sequence2 <- function(nvec) {
+  seq <- seq_len(sum(nvec))
+  reset <- cumsum(nvec[-length(nvec)]) + 1L
+  sub <- integer(length(seq))
+  sub[reset] <- reset - 1L
+  seq - cummax(sub)
+}
 #' Create Triangular Mesh From Elevation Data
 #'
 #' Elevation data should already be in long format, and ordered by row and
@@ -111,14 +125,15 @@ candidate_points <- function(mesh) {
   )
   xymin <- c('xmin', 'ymin')
   xymax <- c('xmax', 'ymax')
-  points.int[xymin] <- lapply(points.int[xymin], ceiling)
-  points.int[xymax] <- lapply(points.int[xymax], floor)
+  points.int[xymin] <-
+    lapply(points.int[xymin], function(x) as.integer(ceiling(x)))
+  points.int[xymax] <- lapply(points.int[xymax], as.integer)
 
   # for each triangle, generate the set of integer coordinates that it could
   # contain.
 
-  p.int.len.x <- pmax(points.int[['xmax']] - points.int[['xmin']] + 1, 0)
-  p.int.len.y <- pmax(points.int[['ymax']] - points.int[['ymin']] + 1, 0)
+  p.int.len.x <- pmax(points.int[['xmax']] - points.int[['xmin']] + 1L, 0L)
+  p.int.len.y <- pmax(points.int[['ymax']] - points.int[['ymin']] + 1L, 0L)
   p.int.len <- p.int.len.x * p.int.len.y
 
   # For each id, need the equivalent of `expand.grid` of the xmin:xmax and
@@ -192,7 +207,9 @@ points_texture <- function(p, m) {
   dimnames(M) <- dimnames(m)
 
   # compute barycentric weighted texture and z values
-  bary <- do.call(barycentric_coord, c(p['x'], M[,'x'], p['y'], M[,'y']))
+  bary <- do.call(
+    barycentric_coord, unname(c(p['x'], M[,'x'], p['y'], M[,'y']))
+  )
 
   # drop pixes outside of mesh triangles.
   inbounds <- bary[[1]] >= 0 & bary[[2]] >= 0 & bary[[3]] >= 0
@@ -263,19 +280,25 @@ project_elev <- function(
     # ggplot(as.data.frame(cbind(t(mxl[1:2,]), z=c(texture)))) +
     #   geom_point(aes(x, y, color=z))
 
-    # Add meta data, and rescale x,y values into 1:res.x and 1:res.y
+    # Turn to list format, rescale, and add meta data
 
-    mxres <- cbind(t(mxlrpp), texture=c(texture))
-    mxres[,'y'] <- (mxres[,'y'] - min(mxres[,'y'])) / diff(range(mxres[,'y'])) *
+    lres <- c(
+      lapply(seq_len(nrow(mxlrpp)), function(i) mxlrpp[i,]), list(texture)
+    )
+    names(lres) <- c('x', 'y', 'z', 't')
+
+    lres[['y']] <-
+      (lres[['y']] - min(lres[['y']])) / diff(range(lres[['y']])) *
       (resolution[2] - 1) + 1
-    mxres[,'x'] <- (mxres[,'x'] - min(mxres[,'x'])) / diff(range(mxres[,'x'])) *
+    lres[['x']] <-
+      (lres[['x']] - min(lres[['x']])) / diff(range(lres[['x']])) *
       (resolution[1] - 1) + 1
 
     # print(ggplot(as.data.frame(mxres)) + geom_point(aes(V1, V2, color=texture)))
 
     # Generate coordinates for triangular mesh from our points.
 
-    mesh <- triangular_mesh(mxres, nr=nrow(elevation), nc=ncol(elevation))
+    mesh <- mesh_tri(lres, dim(elevation))
 
     # mesh2 <- aperm(mesh, c(1, 3, 2))
     # mesh3 <- cbind(
