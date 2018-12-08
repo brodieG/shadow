@@ -9,21 +9,32 @@
 #'   'y', and 'z'.  No NA elements allowed.
 #' @param D scalar numeric observer distance from object along Z axis as a
 #'   multiple of the object's Z-depth.
+#' @param mode character in "rel", "abs". If "rel" then `D` is interpreted as
+#'   multiples of Z depth.  If "abs" it is taken directly as the distance from
+#'   the zero Z value, which should be the point around which the model was
+#'   rotated.
 #' @return L, with 'x', and 'y' components scaled for perspective, and
 #'   'x', 'y', and 'z' components normalized so that the origin is in
 #'   the middle of the 'x'-'y' with the observer Z position at zero.
 
-perspective <- function(L, D) {
-  # Normalize coordinates
-  L[c('x','y')] <- lapply(L[c('x','y')], function(x) x - sum(range(x)) / 2)
-  z.rng <- range(L[['z']])
-  z.depth <- diff(z.rng)
-  L[['z']] <- L[['z']] - (z.rng[2] + D * z.depth)
+perspective <- function(x, d, mode='rel') {
+  stopifnot(isTRUE(mode %in% c('rel', 'abs')))
 
-  # Apply perspective transformation
-  z.factor <- -1/L[['z']]
-  L[c('x','y')] <- lapply(L[c('x','y')], '*', z.factor)
-  L
+  ## Normalize XY coordinates so observer is centered in midpoint of x-y extent
+  ## and at Z=0
+  xp <- x
+  xp[c('x','y','z')] <-
+    lapply(x[c('x','y','z')], function(x) x - sum(range(x)) / 2)
+
+  z.rng <- range(xp[['z']])
+  ZD <- diff(z.rng)
+  xp[['z']] <- if(mode=='rel')
+      xp[['z']] - (z.rng[2] + d * ZD) else xp[['z']] - d
+
+  ## Apply perspective transformation
+  z.factor <- -1 / xp[['z']]
+  xp[c('x','y')] <- lapply(xp[c('x','y')], '*', z.factor)
+  xp
 }
 #' Generate Meshes From Elevation Map
 #'
@@ -107,7 +118,16 @@ barycentric <- function(p, v) {
   list(l1, l2, l3)
 }
 
-to_long <- function(x) rbind(x=c(row(x)), y=c(col(x)), z=c(x))
+to_long <- function(elevation) {
+  rbind(x=c(row(elevation)), y=c(col(elevation)), z=c(elevation))
+  # x <- c(row(elevation))
+  # y <- c(col(elevation))
+  # rbind(
+  #   x=x - sum(range(x)) / 2,
+  #   y=y - sum(range(y)) / 2,
+  #   z=c(elevation - sum(range(elevation)) / 2)
+  # )
+}
 rotate <- function(x, rot) rot %*% x
 mx_as_list <- function(x, texture)
   c(
@@ -115,21 +135,6 @@ mx_as_list <- function(x, texture)
     t=list(c(texture))
   )
 
-perspective <- function(x, d) {
-  z.rng <- range(x[['z']])
-  ZD <- diff(z.rng)
-
-  ## Normalize XY coordinates so observer is centered in midpoint of x-y extent
-  ## and at Z=0
-  xp <- x
-  xp[c('x','y')] <- lapply(x[c('x','y')], function(x) x - sum(range(x)) / 2)
-  xp[['z']] <- xp[['z']] - (z.rng[2] + d * ZD)
-
-  ## Apply perspective transformation
-  z.factor <- -1 / xp[['z']]
-  xp[c('x','y')] <- lapply(xp[c('x','y')], '*', z.factor)
-  xp
-}
 bounding_boxes <- function(mesh) {
   mins <- apply(
     mesh[,c('x','y')], 2,
@@ -188,22 +193,23 @@ rasterize <- function(mesh, resolution, zord, empty) {
   p.raster[do.call(cbind, unname(p.in))] <- texture
   p.raster
 }
-
-project_and_scale <- function(elevation, texture, rotation, resolution, d) {
+rotate_and_persp <- function(elevation, texture, rotation, d, persp.mode) {
   el.long <- to_long(elevation)
   r <- rotate(el.long, rotation)
   rl <- mx_as_list(r, texture)
-  rlp <- perspective(rl, d)
+  rlp <- perspective(rl, d, persp.mode)
+}
 
-  x.rng <- range(rlp[['x']])
-  y.rng <- range(rlp[['y']])
+scale_to_res <- function(L, resolution) {
+  x.rng <- range(L[['x']])
+  y.rng <- range(L[['y']])
   asp <- diff(x.rng) / diff(y.rng)
   y.res <- as.integer(round(resolution * asp))
 
-  rlp[['x']] <- (rlp[['x']] - x.rng[1]) / diff(x.rng) * (resolution - 1) + 1
-  rlp[['y']] <- (rlp[['y']] - y.rng[1]) / diff(y.rng) * (y.res - 1) + 1
-  attr(rlp, 'resolution') <- as.integer(c(x=resolution, y=y.res))
-  rlp
+  L[['x']] <- (L[['x']] - x.rng[1]) / diff(x.rng) * (resolution - 1) + 1
+  L[['y']] <- (L[['y']] - y.rng[1]) / diff(y.rng) * (y.res - 1) + 1
+  attr(L, 'resolution') <- as.integer(c(x=resolution, y=y.res))
+  L
 }
 #' Convert Elevation Map as Triangle Polygon Mesh
 #'
@@ -230,16 +236,35 @@ elevation_as_mesh <- function(elevation, texture, rotation, d) {
 #' @export
 
 render_elevation <- function(
-  elevation, texture, rotation, resolution, d=1, zord='mesh', empty=0
+  elevation, texture, rotation, resolution, d=1, zord='mesh', empty=0,
+  persp.mode='rel'
 ) {
   stopifnot(
     identical(dim(elevation), dim(texture)),
-    isTRUE(zord %in% c('mesh', 'pixel'))
+    isTRUE(zord %in% c('mesh', 'pixel')),
+    isTRUE(persp.mode %in% c('rel', 'abs'))
+  )
+  rlp <- rotate_and_persp(
+    elevation=elevation, texture=texture, rotation=rotation, d=d,
+    persp.mode=persp.mode
   )
   resolution <- as.integer(resolution)
-  rlp <- project_and_scale(elevation, texture, rotation, resolution, d)
-  # really, we should z order the pixels, but that means we need to run the
-  # expensive
-  mesh <- mesh_tri(rlp, dim(elevation), order=zord == 'mesh')
-  rasterize(mesh, attr(rlp, 'resolution'), zord, empty)
+  rlps <- scale_to_res(rlp, resolution)
+  mesh <- mesh_tri(rlps, dim(elevation), order=zord == 'mesh')
+  rasterize(mesh, attr(rlps, 'resolution'), zord, empty)
+}
+
+mrender_elevation <- function(
+  elevation, texture, rotations, resolution, d=1, zord='mesh', empty=0
+) {
+  stopifnot(
+    identical(dim(elevation), dim(texture)),
+    isTRUE(zord %in% c('mesh', 'pixel')),
+    isTRUE(persp.mode %in% c('rel', 'abs'))
+  )
+  # Need to adjust resolutions so that they mean the same thing across the
+  # various frame
+
+  resolution <- as.integer(resolution)
+
 }
