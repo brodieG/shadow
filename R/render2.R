@@ -147,11 +147,14 @@ candidate_pixels <- function(bb) {
   dims.x <- pmax(maxs[['x']] - mins[['x']] + 1, 0)
   dims.y <- pmax(maxs[['y']] - mins[['y']] + 1, 0)
   dims.xy <- dims.x * dims.y
-  dims.xy <- dims.x * dims.y
-  bb.id <- rep(seq_along(dims.x), dims.xy)
-  x.lens <- rep(dims.x, dims.y)
+  bb.id <- rep(seq_along(dims.x), dims.xy) # if dims.xy zero, then id omitted
+
+  dims.val <- dims.xy > 0
+  dims.x.val <- dims.x[dims.val]
+  dims.y.val <- dims.y[dims.val]
+  x.lens <- rep(dims.x.val, dims.y.val)
   x.off <- sequence2(x.lens) - 1L
-  y.off <- rep(sequence2(dims.y), x.lens) - 1L
+  y.off <- rep(sequence2(dims.y.val), x.lens) - 1L
 
   ## Add back the min values of the bounding boxes
   p.x <- x.off + mins[['x']][bb.id]
@@ -190,10 +193,10 @@ project_and_scale <- function(elevation, texture, rotation, resolution, d) {
   x.rng <- range(rlp[['x']])
   y.rng <- range(rlp[['y']])
   asp <- diff(x.rng) / diff(y.rng)
-  y.res <- round((resolution - 1) * asp) + 1L
+  y.res <- as.integer(round(resolution * asp))
 
   rlp[['x']] <- (rlp[['x']] - x.rng[1]) / diff(x.rng) * (resolution - 1) + 1
-  rlp[['y']] <- (rlp[['y']] - y.rng[1]) / diff(y.rng) * y.res
+  rlp[['y']] <- (rlp[['y']] - y.rng[1]) / diff(y.rng) * (y.res - 1) + 1
   attr(rlp, 'resolution') <- as.integer(c(x=resolution, y=y.res))
   rlp
 }
