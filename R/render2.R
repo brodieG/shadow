@@ -168,17 +168,22 @@ mesh_expand <- function(mesh, ids) {
 }
 shade <- function(texture, bc) Reduce('+', Map('*', texture, bc))
 
-rasterize <- function(mesh, resolution) {
+rasterize <- function(mesh, resolution, zord) {
   bb <- bounding_boxes(mesh)
   p.cand <- candidate_pixels(bb)
   mesh.all <- mesh_expand(mesh, p.cand[['id']])
   bc <- barycentric(p.cand, mesh.all)
   inbounds <- Reduce('&', lapply(bc, '>=', 0))
-
-  texture <-
-    shade(lapply(mesh.all[,'t'], '[', inbounds), lapply(bc, '[', inbounds))
-
+  bc.in <- lapply(bc, '[', inbounds)
+  texture <- shade(lapply(mesh.all[,'t'], '[', inbounds), bc.in)
   p.in <- lapply(p.cand[c('x','y')], '[', inbounds)
+
+  if(zord == 'pixel') {
+    zord  <- order(shade(lapply(mesh.all[,'z'], '[', inbounds), bc.in))
+    p.in <- lapply(p.in, '[', zord)
+    texture <- texture[zord]
+  }
+
   p.raster <- matrix(numeric(0), resolution[1], resolution[2])
   p.raster[do.call(cbind, unname(p.in))] <- texture
   p.raster
@@ -204,8 +209,8 @@ project_and_scale <- function(elevation, texture, rotation, resolution, d) {
 #'
 #' @export
 
-elevation_as_mesh <- function(elevation, texture, rotation, resolution, d) {
-  rlp <- project_and_scale(elevation, texture, rotation, resolution, d)
+elevation_as_mesh <- function(elevation, texture, rotation, d) {
+  rlp <- project_and_scale(elevation, texture, rotation, resolution=100, d)
   mesh_tri(rlp, dim(elevation), order=TRUE)
 }
 
@@ -224,10 +229,17 @@ elevation_as_mesh <- function(elevation, texture, rotation, resolution, d) {
 #'   as a multiple of the total depth of the model along the observation axis.
 #' @export
 
-render_elevation <- function(elevation, texture, rotation, resolution, d) {
-  stopifnot(identical(dim(elevation), dim(texture)))
+render_elevation <- function(
+  elevation, texture, rotation, resolution, d, zord='mesh'
+) {
+  stopifnot(
+    identical(dim(elevation), dim(texture)),
+    isTRUE(zord %in% c('mesh', 'pixel'))
+  )
   resolution <- as.integer(resolution)
   rlp <- project_and_scale(elevation, texture, rotation, resolution, d)
-  mesh <- mesh_tri(rlp, dim(elevation), order=TRUE)
-  rasterize(mesh, attr(rlp, 'resolution'))
+  # really, we should z order the pixels, but that means we need to run the
+  # expensive
+  mesh <- mesh_tri(rlp, dim(elevation), order=zord == 'mesh')
+  rasterize(mesh, attr(rlp, 'resolution'), zord)
 }
