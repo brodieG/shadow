@@ -1,8 +1,9 @@
 # Versions of render that match exactliy to what we're doing in the blog post
 
-#' Apply Perspective Transformation
+#' Apply Relative Perspective Transformation
 #'
-#' This function does not check its parameter.
+#' Observer position is specified as a multiple of the Z depth of the object,
+#' measured from the nearest Z point of the object.
 #'
 #' @export
 #' @param L list of equal length numeric vectors containing named elements 'x',
@@ -17,26 +18,29 @@
 #'   'x', 'y', and 'z' components normalized so that the origin is in
 #'   the middle of the 'x'-'y' with the observer Z position at zero.
 
-perspective <- function(x, d, mode='rel') {
-  stopifnot(isTRUE(mode %in% c('rel', 'abs')))
-
+persp_rel <- function(L, d) {
   ## Normalize XY coordinates so observer is centered in midpoint of x-y extent
   ## and at Z=0
-  xp <- x
-  if(mode == 'rel') {
-    xp[c('x','y','z')] <-
-      lapply(x[c('x','y','z')], function(x) x - sum(range(x)) / 2)
-  }
-  z.rng <- range(xp[['z']])
+  LP <- L
+  LP[c('x','y','z')] <-
+      lapply(LP[c('x','y','z')], function(x) x - sum(range(x)) / 2)
+  z.rng <- range(LP[['z']])
   ZD <- diff(z.rng)
-  xp[['z']] <- if(mode=='rel')
-      xp[['z']] - (z.rng[2] + d * ZD) else xp[['z']] - d
+  LP[['z']] <- LP[['z']] - (z.rng[2] + d * ZD)
 
   ## Apply perspective transformation
-  # z.factor <- -1 / xp[['z']]
-  # xp[c('x','y')] <- lapply(xp[c('x','y')], '*', z.factor)
-  xp
+  z.factor <- -1 / LP[['z']]
+  LP[c('x','y')] <- lapply(LP[c('x','y')], '*', z.factor)
+  LP
 }
+
+persp_abs <- function(L, d, fov) {
+  L[['z']] <- L[['z']] - d
+  fovv <- tan(fov / 2 / 180 * pi)
+  L[c('x','y')] <- lapply(L[c('x','y')], function(y) y / (fovv * -L[['z']]))
+  L
+}
+#'
 #' Generate Meshes From Elevation Map
 #'
 #' `mesh_tile` produces a tile mesh, `mesh_tri` produces a triangle mesh.
@@ -129,7 +133,6 @@ to_long <- function(elevation) {
     z=c(elevation - sum(range(elevation)) / 2)
   )
 }
-rotate <- function(x, rot) rot %*% x
 mx_as_list <- function(x, texture)
   c(
     setNames(lapply(seq_len(nrow(x)), function(i) x[i,]), c('x','y','z')),
@@ -179,7 +182,7 @@ rasterize <- function(mesh, resolution, zord, empty) {
   p.cand <- candidate_pixels(bb)
   mesh.all <- mesh_expand(mesh, p.cand[['id']])
   bc <- barycentric(p.cand, mesh.all)
-  inbounds <- Reduce('&', lapply(bc, '>=', 0))
+  inbounds <- Reduce('&', lapply(bc, function(x) !is.na(x) & x >= 0))
   bc.in <- lapply(bc, '[', inbounds)
   texture <- shade(lapply(mesh.all[,'t'], '[', inbounds), bc.in)
   p.in <- lapply(p.cand[c('x','y')], '[', inbounds)
@@ -194,21 +197,22 @@ rasterize <- function(mesh, resolution, zord, empty) {
   p.raster[do.call(cbind, unname(p.in))] <- texture
   p.raster
 }
-rotate_and_persp <- function(elevation, texture, rotation, d, persp.mode) {
+rotate <- function(elevation, texture, rotation) {
   el.long <- to_long(elevation)
-  r <- rotate(el.long, rotation)
+  r <- rotation %*% el.long
   rl <- mx_as_list(r, texture)
-  rlp <- perspective(rl, d, persp.mode)
 }
+# Scale to Pixel Coordinates
+#
+# `scale_abs` is used when perspective was applied on an absolute basis with a
+# field of view and may lead to either cropping (well, bunching really) or empty
+# space.  You may need to change the `fov` value to get a good crop.
+#
+# `scale_rel` will just fit to a particular pixel width.
 
-scale_to_fov <- function(L, resolution, fov) {
-  fovv <- tan(fov/2 / 180 * pi)
-
-  Lf <- L
-  Lf[c('x','y')] <- lapply(L[c('x','y')], function(x) x/(fovv * -L[['z']]))
-
-  x.rng <- range(Lf[['x']])
-  y.rng <- range(Lf[['y']])
+scale_abs <- function(L, resolution) {
+  x.rng <- range(L[['x']])
+  y.rng <- range(L[['y']])
 
   scale_res <- function(w, res) {
     w <- w * res + res / 2
@@ -216,10 +220,10 @@ scale_to_fov <- function(L, resolution, fov) {
     w[w > res] <- res
     w
   }
-  Lf[c('x','y')] <- Map(scale_res, Lf[c('x','y')], c(resolution, resolution))
-  Lf
+  L[c('x','y')] <- Map(scale_res, L[c('x','y')], c(resolution, resolution))
+  L
 }
-scale_to_res <- function(L, resolution) {
+scale_rel <- function(L, resolution) {
   x.rng <- range(L[['x']])
   y.rng <- range(L[['y']])
   asp <- diff(x.rng) / diff(y.rng)
@@ -255,20 +259,16 @@ elevation_as_mesh <- function(elevation, texture, rotation, d) {
 #' @export
 
 render_elevation <- function(
-  elevation, texture, rotation, resolution, d=1, zord='mesh', empty=0,
-  persp.mode='rel'
+  elevation, texture, rotation, resolution, d=1, zord='mesh', empty=0
 ) {
   stopifnot(
     identical(dim(elevation), dim(texture)),
-    isTRUE(zord %in% c('mesh', 'pixel')),
-    isTRUE(persp.mode %in% c('rel', 'abs'))
+    isTRUE(zord %in% c('mesh', 'pixel'))
   )
-  rlp <- rotate_and_persp(
-    elevation=elevation, texture=texture, rotation=rotation, d=d,
-    persp.mode=persp.mode
-  )
+  rl <- rotate(elevation=elevation, texture=texture, rotation=rotation)
+  rlp <- persp_rel(rl, d)
   resolution <- as.integer(resolution)
-  rlps <- scale_to_res(rlp, resolution)
+  rlps <- scale_rel(rlp, resolution)
   mesh <- mesh_tri(rlps, dim(elevation), order=zord == 'mesh')
   rasterize(mesh, attr(rlps, 'resolution'), zord, empty)
 }
@@ -276,42 +276,39 @@ render_elevation <- function(
 #' @export
 
 mrender_elevation <- function(
-  elevation, texture, rotations, resolution, d=1, zord='mesh', empty=0,
-  persp.mode='rel'
+  elevation, texture, rotations, resolution, d=diff(range(elevation)) * 2,
+  fov=60, zord='mesh', empty=0
 ) {
   stopifnot(
     identical(dim(elevation), dim(texture)),
-    isTRUE(zord %in% c('mesh', 'pixel')),
-    isTRUE(persp.mode %in% c('rel', 'abs'))
+    isTRUE(zord %in% c('mesh', 'pixel'))
   )
   #Perspective transform for each resolution
 
   resolution <- as.integer(resolution)
-  RLP <- lapply(
-    rotations,
-    rotate_and_persp,
-    elevation=elevation, texture=texture, d=d, persp.mode=persp.mode
-  )
+  RL <- lapply(rotations, rotate, elevation=elevation, texture=texture)
+  RLP <- lapply(RL, persp_abs, fov=fov, d=d)
+
   # Need to adjust resolutions so that they mean the same thing across the
   # various frames.
 
-  RLPS <- Map(scale_to_fov, RLP, resolution, 60)
+  RLPS <- Map(scale_abs, RLP, resolution)
   MESH <- lapply(RLPS, mesh_tri, dim(elevation), order=zord == 'mesh')
-  elren <- mapply(
+  ELREN <- mapply(
     rasterize, MESH,
     MoreArgs=list(zord=zord, empty=empty, resolution=c(resolution, resolution)),
     SIMPLIFY=FALSE
   )
-  xs <- vapply(elren, nrow, 0L)
-  ys <- vapply(elren, ncol, 0L)
+  xs <- vapply(ELREN, nrow, 0L)
+  ys <- vapply(ELREN, ncol, 0L)
 
   xoff <- as.integer((max(xs) - xs) / 2)
   yoff <- as.integer((max(ys) - ys) / 2)
 
   lapply(
-    seq_along(elren),
+    seq_along(ELREN),
     function(i) {
-      mx <- elren[[i]]
+      mx <- ELREN[[i]]
       res <- matrix(0, max(xs), max(ys))
       res[seq_len(nrow(mx)) + xoff[i], seq_len(ncol(mx)) + yoff[i]] <- mx
       res
