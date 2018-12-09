@@ -338,16 +338,19 @@ mrender_elevation <- function(
 }
 #' @export
 
-  xoff <- as.integer((max(xs) - xs) / 2)
-  yoff <- as.integer((max(ys) - ys) / 2)
+analygraph_glasses <- function(scale=1) {
+  x.frames <- c(0, 1,  1, .6, .5, .4,  0) * .8 + .1
+  y.frames <- c(1, 1, .6, .6, .7, .6, .6) * .8 + .1
+  x.left <- c(.1, .4, .4, .1) * .8 + .1
+  x.right <- x.left + .5 * .8
+  y.left <- y.right <- c(.7, .7, .9, .9) * .8 + .1
+  usr <- par()[['usr']]
+  usr.x <- usr[1:2]
+  usr.y <- usr[3:4]
+  x <- c(x.frames, NA, x.left, NA, x.right) * diff(range(usr.x)) * scale +
+    usr.x[1]
+  y <- c(y.frames, NA, y.left, NA, y.right) * diff(range(usr.y)) * scale +
+    (1 - scale) * diff(range(usr.y)) + usr.y[1]
 
-  lapply(
-    seq_along(ELREN),
-    function(i) {
-      mx <- ELREN[[i]]
-      res <- matrix(0, max(xs), max(ys))
-      res[seq_len(nrow(mx)) + xoff[i], seq_len(ncol(mx)) + yoff[i]] <- mx
-      res
-    }
-  )
+  polygon(x, y, col=c('#CCCCCC', '#00FFFF', '#FF0000'), border=NA)
 }
