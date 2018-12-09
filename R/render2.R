@@ -277,30 +277,66 @@ render_elevation <- function(
 
 mrender_elevation <- function(
   elevation, texture, rotations, resolution, d=diff(range(elevation)) * 2,
-  fov=60, zord='mesh', empty=0
+  fov=60, zord='mesh', empty=0, trim=TRUE
 ) {
+  if(!is.list(elevation)) elevation <- list(elevation)
+  if(!is.list(texture)) texture <- list(texture)
+  if(!is.list(d)) d <- list(d)
+  stopifnot(is.list(rotations))
+
+  elevation <- rep(elevation, length.out=length(rotations))
+  texture <- rep(texture, length.out=length(rotations))
+  d <- rep(d, length.out=length(rotations))
+
   stopifnot(
-    identical(dim(elevation), dim(texture)),
+    identical(lapply(elevation, dim), lapply(texture, dim)),
+    tail(duplicated(t(sapply(elevation, dim))), -1L),
     isTRUE(zord %in% c('mesh', 'pixel'))
   )
   #Perspective transform for each resolution
 
   resolution <- as.integer(resolution)
-  RL <- lapply(rotations, rotate, elevation=elevation, texture=texture)
-  RLP <- lapply(RL, persp_abs, fov=fov, d=d)
+  RL <- Map(rotate, elevation=elevation, texture=texture, rotations)
+  RLP <- Map(persp_abs, RL, fov=fov, d=d)
 
   # Need to adjust resolutions so that they mean the same thing across the
   # various frames.
 
   RLPS <- Map(scale_abs, RLP, resolution)
-  MESH <- lapply(RLPS, mesh_tri, dim(elevation), order=zord == 'mesh')
+  MESH <- lapply(RLPS, mesh_tri, dim(elevation[[1]]), order=zord == 'mesh')
   ELREN <- mapply(
     rasterize, MESH,
     MoreArgs=list(zord=zord, empty=empty, resolution=c(resolution, resolution)),
     SIMPLIFY=FALSE
   )
-  xs <- vapply(ELREN, nrow, 0L)
-  ys <- vapply(ELREN, ncol, 0L)
+  # Remove totally blank lines; this currently only works if `empty` is set to 0
+  if(trim) {
+    cols <- rle(Reduce('+', lapply(ELREN, colSums)))
+    rows <- rle(Reduce('+', lapply(ELREN, rowSums)))
+    col.drop <- c(
+      if(!cols[['values']][1]) -seq_len(cols[['lengths']][1]),
+      if(!cols[['values']][length(cols[['values']])])
+        -seq(
+          from=ncol(ELREN[[1]]),
+          length.out=cols[['lengths']][length(cols[['values']])],
+          by=-1
+        )
+    )
+    row.drop <- c(
+      if(!rows[['values']][1]) -seq_len(rows[['lengths']][1]),
+      if(!rows[['values']][length(rows[['values']])])
+        -seq(
+          from=ncol(ELREN[[1]]),
+          length.out=rows[['lengths']][length(rows[['values']])],
+          by=-1
+        )
+    )
+    if(!length(col.drop)) col.drop <- seq_len(ncol(ELREN[[1]]))
+    if(!length(row.drop)) row.drop <- seq_len(nrow(ELREN[[1]]))
+    lapply(ELREN, '[', row.drop, col.drop)
+  } else ELREN
+}
+#' @export
 
   xoff <- as.integer((max(xs) - xs) / 2)
   yoff <- as.integer((max(ys) - ys) / 2)
