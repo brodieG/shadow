@@ -254,17 +254,51 @@ render_elevation <- function(
   rasterize(mesh, attr(rlps, 'resolution'), zord, empty)
 }
 
+#' @export
+
 mrender_elevation <- function(
-  elevation, texture, rotations, resolution, d=1, zord='mesh', empty=0
+  elevation, texture, rotations, resolution, d=1, zord='mesh', empty=0,
+  persp.mode='rel'
 ) {
   stopifnot(
     identical(dim(elevation), dim(texture)),
     isTRUE(zord %in% c('mesh', 'pixel')),
     isTRUE(persp.mode %in% c('rel', 'abs'))
   )
-  # Need to adjust resolutions so that they mean the same thing across the
-  # various frame
+  #Perspective transform for each resolution
 
   resolution <- as.integer(resolution)
+  RLP <- lapply(
+    rotations,
+    rotate_and_persp,
+    elevation=elevation, texture=texture, d=d, persp.mode=persp.mode
+  )
+  # Need to adjust resolutions so that they mean the same thing across the
+  # various frames.
 
+  x.widths <- vapply(RLP, function(x) diff(range(x[['x']])), 0)
+  # y.widths <- vapply(RLP, function(x) diff(range(x[['x']])), 0)
+  resolutions <- round(resolution * x.widths / max(x.widths))
+  RLPS <- Map(scale_to_res, RLP, resolutions)
+  MESH <- lapply(RLPS, mesh_tri, dim(elevation), order=zord == 'mesh')
+  resolutions.xy <- lapply(RLPS, attr, 'resolution')
+  elren <- mapply(
+    rasterize, MESH, resolution=resolutions.xy,
+    MoreArgs=list(zord=zord, empty=empty), SIMPLIFY=FALSE
+  )
+  xs <- vapply(elren, nrow, 0L)
+  ys <- vapply(elren, ncol, 0L)
+
+  xoff <- as.integer((max(xs) - xs) / 2)
+  yoff <- as.integer((max(ys) - ys) / 2)
+
+  lapply(
+    seq_along(elren),
+    function(i) {
+      mx <- elren[[i]]
+      res <- matrix(0, max(xs), max(ys))
+      res[seq_len(nrow(mx)) + xoff[i], seq_len(ncol(mx)) + yoff[i]] <- mx
+      res
+    }
+  )
 }
