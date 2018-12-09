@@ -23,17 +23,18 @@ perspective <- function(x, d, mode='rel') {
   ## Normalize XY coordinates so observer is centered in midpoint of x-y extent
   ## and at Z=0
   xp <- x
-  xp[c('x','y','z')] <-
-    lapply(x[c('x','y','z')], function(x) x - sum(range(x)) / 2)
-
+  if(mode == 'rel') {
+    xp[c('x','y','z')] <-
+      lapply(x[c('x','y','z')], function(x) x - sum(range(x)) / 2)
+  }
   z.rng <- range(xp[['z']])
   ZD <- diff(z.rng)
   xp[['z']] <- if(mode=='rel')
       xp[['z']] - (z.rng[2] + d * ZD) else xp[['z']] - d
 
   ## Apply perspective transformation
-  z.factor <- -1 / xp[['z']]
-  xp[c('x','y')] <- lapply(xp[c('x','y')], '*', z.factor)
+  # z.factor <- -1 / xp[['z']]
+  # xp[c('x','y')] <- lapply(xp[c('x','y')], '*', z.factor)
   xp
 }
 #' Generate Meshes From Elevation Map
@@ -119,14 +120,14 @@ barycentric <- function(p, v) {
 }
 
 to_long <- function(elevation) {
-  rbind(x=c(row(elevation)), y=c(col(elevation)), z=c(elevation))
-  # x <- c(row(elevation))
-  # y <- c(col(elevation))
-  # rbind(
-  #   x=x - sum(range(x)) / 2,
-  #   y=y - sum(range(y)) / 2,
-  #   z=c(elevation - sum(range(elevation)) / 2)
-  # )
+  # rbind(x=c(row(elevation)), y=c(col(elevation)), z=c(elevation))
+  x <- c(row(elevation))
+  y <- c(col(elevation))
+  rbind(
+    x=x - sum(range(x)) / 2,
+    y=y - sum(range(y)) / 2,
+    z=c(elevation - sum(range(elevation)) / 2)
+  )
 }
 rotate <- function(x, rot) rot %*% x
 mx_as_list <- function(x, texture)
@@ -200,6 +201,24 @@ rotate_and_persp <- function(elevation, texture, rotation, d, persp.mode) {
   rlp <- perspective(rl, d, persp.mode)
 }
 
+scale_to_fov <- function(L, resolution, fov) {
+  fovv <- tan(fov/2 / 180 * pi)
+
+  Lf <- L
+  Lf[c('x','y')] <- lapply(L[c('x','y')], function(x) x/(fovv * -L[['z']]))
+
+  x.rng <- range(Lf[['x']])
+  y.rng <- range(Lf[['y']])
+
+  scale_res <- function(w, res) {
+    w <- w * res + res / 2
+    w[w < 1] <- 1
+    w[w > res] <- res
+    w
+  }
+  Lf[c('x','y')] <- Map(scale_res, Lf[c('x','y')], c(resolution, resolution))
+  Lf
+}
 scale_to_res <- function(L, resolution) {
   x.rng <- range(L[['x']])
   y.rng <- range(L[['y']])
@@ -276,15 +295,12 @@ mrender_elevation <- function(
   # Need to adjust resolutions so that they mean the same thing across the
   # various frames.
 
-  x.widths <- vapply(RLP, function(x) diff(range(x[['x']])), 0)
-  # y.widths <- vapply(RLP, function(x) diff(range(x[['x']])), 0)
-  resolutions <- round(resolution * x.widths / max(x.widths))
-  RLPS <- Map(scale_to_res, RLP, resolutions)
+  RLPS <- Map(scale_to_fov, RLP, resolution, 60)
   MESH <- lapply(RLPS, mesh_tri, dim(elevation), order=zord == 'mesh')
-  resolutions.xy <- lapply(RLPS, attr, 'resolution')
   elren <- mapply(
-    rasterize, MESH, resolution=resolutions.xy,
-    MoreArgs=list(zord=zord, empty=empty), SIMPLIFY=FALSE
+    rasterize, MESH,
+    MoreArgs=list(zord=zord, empty=empty, resolution=c(resolution, resolution)),
+    SIMPLIFY=FALSE
   )
   xs <- vapply(elren, nrow, 0L)
   ys <- vapply(elren, ncol, 0L)
