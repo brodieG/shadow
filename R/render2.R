@@ -47,6 +47,7 @@ persp_abs <- function(L, d, fov) {
 #' The elevation map should have been converted to a list of equal length
 #' vectors in "long" format.
 #'
+#' @export
 #' @rdname mesh
 #' @param L list of equal length numeric vectors containing named elements 'x',
 #'   'y', and 'z'.  No NA elements allowed.
@@ -239,8 +240,9 @@ scale_rel <- function(L, resolution) {
 #' @export
 
 elevation_as_mesh <- function(elevation, texture, rotation, d) {
-  rlp <- project_and_scale(elevation, texture, rotation, resolution=100, d)
-  mesh_tri(rlp, dim(elevation), order=TRUE)
+  rl <- rotate(elevation=elevation, texture=texture, rotation=rotation)
+  rlp <- persp_rel(rl, d)
+  mesh <- mesh_tri(rlp, dim(elevation), order=TRUE)
 }
 
 #' Render a 3D Elevation as a 2D Image
