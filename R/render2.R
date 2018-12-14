@@ -8,9 +8,10 @@
 #' @export
 #' @param L list of equal length numeric vectors containing named elements 'x',
 #'   'y', and 'z'.  No NA elements allowed.
-#' @param D scalar numeric observer distance from object along Z axis as a
-#'   multiple of the object's Z-depth.
-#' @param mode character in "rel", "abs". If "rel" then `D` is interpreted as
+#' @param d scalar numeric observer distance from object along Z axis as a
+#'   multiple of the object's Z-depth, or for `persp_abs` the distance from the
+#'   midpoint of the model..
+#' @param mode character in "rel", "abs". If "rel" then `d` is interpreted as
 #'   multiples of Z depth.  If "abs" it is taken directly as the distance from
 #'   the zero Z value, which should be the point around which the model was
 #'   rotated.
@@ -33,6 +34,8 @@ persp_rel <- function(L, d) {
   LP[c('x','y')] <- lapply(LP[c('x','y')], '*', z.factor)
   LP
 }
+#' @export
+#' @rdname persp_rel
 
 persp_abs <- function(L, d, fov) {
   L[['z']] <- L[['z']] - d
@@ -178,6 +181,8 @@ mesh_expand <- function(mesh, ids) {
 }
 shade <- function(texture, bc) Reduce('+', Map('*', texture, bc))
 
+# Rasterize Triangle Mesh
+
 rasterize <- function(mesh, resolution, zord, empty) {
   bb <- bounding_boxes(mesh)
   p.cand <- candidate_pixels(bb)
@@ -246,6 +251,9 @@ elevation_as_mesh <- function(elevation, texture, rotation, d) {
 }
 
 #' Render a 3D Elevation as a 2D Image
+#'
+#' `mrender_elevation` runs multiple projections with the same perspective and
+#' field of view parameters so that they can be used together in a video.
 #'
 #' @param elevation numeric matrix of elevations; each matrix element is assumed
 #'   to be equally spaced in both X and Y dimensions.
@@ -337,22 +345,4 @@ mrender_elevation <- function(
     if(!length(row.drop)) row.drop <- seq_len(nrow(ELREN[[1]]))
     lapply(ELREN, '[', row.drop, col.drop)
   } else ELREN
-}
-#' @export
-
-analygraph_glasses <- function(scale=1) {
-  x.frames <- c(0, 1,  1, .6, .5, .4,  0) * .8 + .1
-  y.frames <- c(1, 1, .6, .6, .7, .6, .6) * .8 + .1
-  x.left <- c(.1, .4, .4, .1) * .8 + .1
-  x.right <- x.left + .5 * .8
-  y.left <- y.right <- c(.7, .7, .9, .9) * .8 + .1
-  usr <- par()[['usr']]
-  usr.x <- usr[1:2]
-  usr.y <- usr[3:4]
-  x <- c(x.frames, NA, x.left, NA, x.right) * diff(range(usr.x)) * scale +
-    usr.x[1]
-  y <- c(y.frames, NA, y.left, NA, y.right) * diff(range(usr.y)) * scale +
-    (1 - scale) * diff(range(usr.y)) + usr.y[1]
-
-  polygon(x, y, col=c('#CCCCCC', '#00FFFF', '#FF0000'), border=NA)
 }

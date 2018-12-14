@@ -37,8 +37,25 @@ ggplot(shade.df, aes(x=Var1, y=Var2, fill=z)) +
 
 ## 3D Rendering
 
+There are various functions related to 3D rendering in 'R/render.R'.  Their use
+is demonstrated in the [Stereoscopy Blog
+Post](https://brodieg.com/2018/12/12/three-d-pipeline/).
 
-
+```{r}
+library(shadow)
+rot <- rot_x(-20) %*% rot_z(65)
+rot.l <- rot %*% rot_z(2.5)
+rot.r <- rot %*% rot_z(-2.5)
+shadow <- ray_shade2(volcano, seq(-90, 90, length=25), sunangle=180)
+elren <- mrender_elevation(
+  volcano, shadow, list(rot.l, rot.r), res=1000, d=125, fov=85
+)
+flip <- function(x) t(x)[rev(seq_len(ncol(x))),]
+elcolor <- analygraph(flip(elren[[1]]), elren[[2]])
+par(bg='black', mai=numeric(4))
+plot(as.raster(elcolor))
+shadow::analygraph_glasses(.15)   # for the icon h/t @jurbane2
+```
 
 ## Installation
 
