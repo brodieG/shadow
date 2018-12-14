@@ -60,3 +60,12 @@ analygraph_glasses <- function(scale=1) {
 
   polygon(x, y, col=c('#CCCCCC', '#00FFFF', '#FF0000'), border=NA)
 }
+#' @export
+
+analygraph <- function(left, right) {
+  analygraph <- array(0, dim=c(dim(left), 3))
+  analygraph[,,1] <- left      # red channel
+  analygraph[,,2:3] <- right   # green and blue
+  analygraph
+}
+

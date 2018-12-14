@@ -51,10 +51,10 @@ elren <- mrender_elevation(
   volcano, shadow, list(rot.l, rot.r), res=1000, d=125, fov=85
 )
 flip <- function(x) t(x)[rev(seq_len(ncol(x))),]
-elcolor <- analygraph(flip(elren[[1]]), elren[[2]])
+elcolor <- analygraph(flip(elren[[1]]), flip(elren[[2]]))
 par(bg='black', mai=numeric(4))
 plot(as.raster(elcolor))
-shadow::analygraph_glasses(.15)   # for the icon h/t @jurbane2
+analygraph_glasses(.15)   # for the icon h/t @jurbane2
 ```
 
 ## Installation
