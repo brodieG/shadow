@@ -233,7 +233,7 @@ scale_rel <- function(L, resolution) {
   x.rng <- range(L[['x']])
   y.rng <- range(L[['y']])
   asp <- diff(x.rng) / diff(y.rng)
-  y.res <- as.integer(round(resolution * asp))
+  y.res <- as.integer(round(resolution / asp))
 
   L[['x']] <- (L[['x']] - x.rng[1]) / diff(x.rng) * (resolution - 1) + 1
   L[['y']] <- (L[['y']] - y.rng[1]) / diff(y.rng) * (y.res - 1) + 1
