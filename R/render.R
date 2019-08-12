@@ -215,7 +215,7 @@ rotate <- function(elevation, texture, rotation) {
 #
 # `scale_rel` will just fit to a particular pixel width.
 #
-# `scale_abs2` will fit to specific x/y values, resolution is length 2 with x
+# `scale_rel2` will fit to specific x/y values, resolution is length 2 with x
 # first and y second.
 
 scale_abs <- function(L, resolution) {
