@@ -2,10 +2,15 @@
 % Please edit documentation in R/render.R
 \name{render_elevation}
 \alias{render_elevation}
+\alias{render_elevation_rel}
 \title{Render a 3D Elevation as a 2D Image}
 \usage{
 render_elevation(elevation, texture, rotation, resolution, d = 1,
   zord = "mesh", empty = 0)
+
+render_elevation_rel(elevation, texture, rotation,
+  resolution = dim(elevation), d = mean(resolution), zord = "mesh",
+  empty = 0)
 }
 \arguments{
 \item{elevation}{numeric matrix of elevations; each matrix element is assumed
@@ -15,16 +20,25 @@ to be equally spaced in both X and Y dimensions.}
 as \code{elevation}, where 1 means light and 0 means dark.  Currently only
 grayscale textures are supported.}
 
+\item{rotation}{3 x 3 numeric rotation matrix.}
+
 \item{resolution}{integer(1L) the width of the output in pixels assuming
 there is no rotation.  Actual width will depend on whether rotation causes
-the width to change.}
+the width to change.  With \code{render_elevation_rel} should be length 2
+specifying actual output size.}
 
 \item{d}{numeric(1L) distance of the observer from nearest part of the model
-as a multiple of the total depth of the model along the observation axis.}
-
-\item{3}{x 3 numeric rotation matrix.}
+as a multiple of the total depth of the model along the observation axis,
+for \code{render_elevation_rel} is the actual distance from the rotation point.
+Use \code{Inf} to turn off perspective (isometric).}
 }
 \description{
 \code{mrender_elevation} runs multiple projections with the same perspective and
 field of view parameters so that they can be used together in a video.
+}
+\details{
+\code{render_elevation_rel} fits output to specific size (provide length 2
+\code{resolution}).  Oddly, it uses \code{d} as absolute distance.  This is just
+because for the very particular use case I wrote this for it was useful to be
+that way.
 }

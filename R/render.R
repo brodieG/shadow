@@ -11,15 +11,13 @@
 #' @param d scalar numeric observer distance from object along Z axis as a
 #'   multiple of the object's Z-depth, or for `persp_abs` the distance from the
 #'   midpoint of the model..
-#' @param mode character in "rel", "abs". If "rel" then `d` is interpreted as
-#'   multiples of Z depth.  If "abs" it is taken directly as the distance from
-#'   the zero Z value, which should be the point around which the model was
-#'   rotated.
+#' @param dist.abs TRUE or FALSE, if TRUE then distance is measured directly
+#'   from point of rotation, otherwise as multiples of model depth.
 #' @return L, with 'x', and 'y' components scaled for perspective, and
 #'   'x', 'y', and 'z' components normalized so that the origin is in
 #'   the middle of the 'x'-'y' with the observer Z position at zero.
 
-persp_rel <- function(L, d) {
+persp_rel <- function(L, d, dist.abs=FALSE) {
   ## Normalize XY coordinates so observer is centered in midpoint of x-y extent
   ## and at Z=0
   LP <- L
@@ -27,13 +25,14 @@ persp_rel <- function(L, d) {
       lapply(LP[c('x','y','z')], function(x) x - sum(range(x)) / 2)
   z.rng <- range(LP[['z']])
   ZD <- diff(z.rng)
-  LP[['z']] <- LP[['z']] - (z.rng[2] + d * ZD)
+  LP[['z']] <- LP[['z']] - (z.rng[2] + d * if(dist.abs) 1 else ZD)
 
   ## Apply perspective transformation
   z.factor <- -1 / LP[['z']]
   LP[c('x','y')] <- lapply(LP[c('x','y')], '*', z.factor)
   LP
 }
+
 #' @export
 #' @rdname persp_rel
 
@@ -215,6 +214,9 @@ rotate <- function(elevation, texture, rotation) {
 # space.  You may need to change the `fov` value to get a good crop.
 #
 # `scale_rel` will just fit to a particular pixel width.
+#
+# `scale_abs2` will fit to specific x/y values, resolution is length 2 with x
+# first and y second.
 
 scale_abs <- function(L, resolution) {
   x.rng <- range(L[['x']])
@@ -227,6 +229,17 @@ scale_abs <- function(L, resolution) {
     w
   }
   L[c('x','y')] <- Map(scale_res, L[c('x','y')], c(resolution, resolution))
+  L
+}
+scale_rel2 <- function(L, resolution) {
+  x.rng <- range(L[['x']])
+  y.rng <- range(L[['y']])
+  asp <- diff(x.rng) / diff(y.rng)
+  y.res <- as.integer(round(resolution / asp))
+
+  L[['x']] <- (L[['x']] - x.rng[1]) / diff(x.rng) * (resolution[1] - 1) + 1
+  L[['y']] <- (L[['y']] - y.rng[1]) / diff(y.rng) * (resolution[2] - 1) + 1
+  attr(L, 'resolution') <- as.integer(c(x=resolution[1], y=resolution[2]))
   L
 }
 scale_rel <- function(L, resolution) {
@@ -255,17 +268,25 @@ elevation_as_mesh <- function(elevation, texture, rotation, d) {
 #' `mrender_elevation` runs multiple projections with the same perspective and
 #' field of view parameters so that they can be used together in a video.
 #'
+#' `render_elevation_rel` fits output to specific size (provide length 2
+#' `resolution`).  Oddly, it uses `d` as absolute distance.  This is just
+#' because for the very particular use case I wrote this for it was useful to be
+#' that way.
+#'
 #' @param elevation numeric matrix of elevations; each matrix element is assumed
 #'   to be equally spaced in both X and Y dimensions.
 #' @param texture a numeric matrix with values in [0,1] of the same dimensions
 #'   as `elevation`, where 1 means light and 0 means dark.  Currently only
 #'   grayscale textures are supported.
-#' @param 3 x 3 numeric rotation matrix.
+#' @param rotation 3 x 3 numeric rotation matrix.
 #' @param resolution integer(1L) the width of the output in pixels assuming
 #'   there is no rotation.  Actual width will depend on whether rotation causes
-#'   the width to change.
+#'   the width to change.  With `render_elevation_rel` should be length 2
+#'   specifying actual output size.
 #' @param d numeric(1L) distance of the observer from nearest part of the model
-#'   as a multiple of the total depth of the model along the observation axis.
+#'   as a multiple of the total depth of the model along the observation axis,
+#'   for `render_elevation_rel` is the actual distance from the rotation point.
+#'   Use `Inf` to turn off perspective (isometric).
 #' @export
 
 render_elevation <- function(
@@ -276,13 +297,36 @@ render_elevation <- function(
     isTRUE(zord %in% c('mesh', 'pixel'))
   )
   rl <- rotate(elevation=elevation, texture=texture, rotation=rotation)
-  rlp <- persp_rel(rl, d)
+  rlp <- if(d != Inf) {
+    persp_rel(rl, d)
+  } else rl
+
   resolution <- as.integer(resolution)
   rlps <- scale_rel(rlp, resolution)
   mesh <- mesh_tri(rlps, dim(elevation), order=zord == 'mesh')
   rasterize(mesh, attr(rlps, 'resolution'), zord, empty)
 }
+#' @export
+#' @rdname render_elevation
 
+render_elevation_rel <- function(
+  elevation, texture, rotation, resolution=dim(elevation), d=mean(resolution),
+  zord='mesh', empty=0
+) {
+  stopifnot(
+    identical(dim(elevation), dim(texture)),
+    isTRUE(zord %in% c('mesh', 'pixel')),
+    is.numeric(resolution),
+    length(resolution) == 2
+  )
+  rl <- rotate(elevation=elevation, texture=texture, rotation=rotation)
+  rlp <- if(d != Inf) persp_rel(rl, d, dist.abs=TRUE) else rl
+
+  resolution <- as.integer(resolution)
+  rlps <- scale_rel2(rlp, resolution)
+  mesh <- mesh_tri(rlps, dim(elevation), order=zord == 'mesh')
+  rasterize(mesh, attr(rlps, 'resolution'), zord, empty)
+}
 #' @export
 
 mrender_elevation <- function(

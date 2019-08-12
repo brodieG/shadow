@@ -5,7 +5,7 @@
 \alias{persp_abs}
 \title{Apply Relative Perspective Transformation}
 \usage{
-persp_rel(L, d)
+persp_rel(L, d, dist.abs = FALSE)
 
 persp_abs(L, d, fov)
 }
@@ -17,10 +17,8 @@ persp_abs(L, d, fov)
 multiple of the object's Z-depth, or for \code{persp_abs} the distance from the
 midpoint of the model..}
 
-\item{mode}{character in "rel", "abs". If "rel" then \code{d} is interpreted as
-multiples of Z depth.  If "abs" it is taken directly as the distance from
-the zero Z value, which should be the point around which the model was
-rotated.}
+\item{dist.abs}{TRUE or FALSE, if TRUE then distance is measured directly
+from point of rotation, otherwise as multiples of model depth.}
 }
 \value{
 L, with 'x', and 'y' components scaled for perspective, and
