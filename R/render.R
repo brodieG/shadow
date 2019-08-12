@@ -187,7 +187,9 @@ rasterize <- function(mesh, resolution, zord, empty) {
   p.cand <- candidate_pixels(bb)
   mesh.all <- mesh_expand(mesh, p.cand[['id']])
   bc <- barycentric(p.cand, mesh.all)
-  inbounds <- Reduce('&', lapply(bc, function(x) !is.na(x) & x >= 0))
+  inbounds <- Reduce(
+    '&', lapply(bc, function(x) !is.na(x) & x >= -.Machine$double.neg.eps)
+  )
   bc.in <- lapply(bc, '[', inbounds)
   texture <- shade(lapply(mesh.all[,'t'], '[', inbounds), bc.in)
   p.in <- lapply(p.cand[c('x','y')], '[', inbounds)
